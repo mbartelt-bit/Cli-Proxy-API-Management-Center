@@ -18,8 +18,8 @@ import {
   isThemeSurfaceIconProvider,
 } from '@/features/authFiles/constants';
 import {
+  formatLedgerKindLabel,
   formatLedgerPercent,
-  formatLedgerWindowLabel,
   quotaTier,
   type LedgerKind,
   type LedgerProviderModel,
@@ -77,7 +77,7 @@ export function QuotaLedgerSummaryCell({ model, resolvedTheme, now }: QuotaLedge
   const providerLabel = getTypeLabel(t, provider);
   const iconSrc = getAuthFileIcon(provider, resolvedTheme);
   const headline = model.headline;
-  const labelFor = (kind: LedgerKind) => formatLedgerWindowLabel(t, kind.sample);
+  const labelFor = (kind: LedgerKind) => formatLedgerKindLabel(t, kind);
 
   const windowLabel = headline
     ? labelFor(headline)

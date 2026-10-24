@@ -315,6 +315,52 @@ describe('ledger row', () => {
     expect(markup).toContain('data-state="error"');
   });
 
+  test('a group-scoped column reads the same in every row and in the summary', () => {
+    const bucket = (id: string, remainingFraction: number) => ({
+      id,
+      label: 'Weekly Limit',
+      window: 'weekly',
+      remainingFraction,
+      resetAtMs: NOW + 3 * DAY_MS,
+      periodHours: 168,
+    });
+    const gemini = (fraction: number) => ({
+      id: 'gemini-models',
+      label: 'Gemini Models',
+      buckets: [bucket('gemini-weekly', fraction)],
+    });
+    // One credential sees a single group, the other two: labels must not follow suit.
+    const quotas = [
+      { status: 'success', groups: [gemini(0.4)] },
+      {
+        status: 'success',
+        groups: [
+          gemini(0.6),
+          { id: 'claude-gpt', label: 'Claude and GPT Models', buckets: [bucket('cg', 0.9)] },
+        ],
+      },
+    ] as QuotaCardState[];
+    const model = buildLedgerProviderModel(
+      'antigravity',
+      quotas.map((quota, index) => ({
+        id: `ag-${index}`,
+        windows: extractLedgerWindows('antigravity', quota),
+      })),
+      NOW
+    );
+    const qualified = 'Gemini models · Weekly limit';
+    expect(renderCell(model)).toContain(qualified);
+    quotas.forEach((quota) => {
+      const markup = renderRow({
+        entry: { type: 'antigravity', file: { name: 'antigravity-a.json', type: 'antigravity' } },
+        quota,
+        columns: model.columns,
+      });
+      expect(markup).toContain(qualified);
+      expect(markup).not.toMatch(/>Weekly limit</);
+    });
+  });
+
   test('a Codex credential with reset credits keeps its reset action', () => {
     const markup = renderRow({
       entry: { type: 'codex', file: { name: 'codex-a.json', type: 'codex' } },

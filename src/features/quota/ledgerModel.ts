@@ -45,7 +45,11 @@ export interface LedgerWindow {
   /** i18n key that re-localizes the label at render time when present. */
   labelKey?: string;
   labelParams?: Record<string, string | number>;
-  /** Group qualifier for providers whose windows repeat per model group. */
+  /**
+   * The model group a bucket belongs to, for providers whose windows repeat
+   * per group. Always attached when known; whether a label shows it is decided
+   * once per provider (`LedgerKind.qualifyScope`), never per credential.
+   */
   scope?: { label: string; labelKey?: string };
   /** Remaining percent, 0..100; null when the window reports no usage. */
   remaining: number | null;
@@ -82,6 +86,30 @@ const remainingFromUsed = (used: unknown): number | null => {
 
 const WEEK_HOURS = 24 * 7;
 const SESSION_PERIOD_HOURS = 5;
+
+/**
+ * Window length implied by a bucket's `window`, for buckets whose state has
+ * no period. The bucket builder only knows 5-hour and weekly periods, yet
+ * plugins also report daily and monthly windows, which would otherwise rank
+ * last in the "longest window governs" headline rule. Same spellings as the
+ * Antigravity label resolver (`BUCKET_WINDOW_KEYS`).
+ */
+const BUCKET_WINDOW_HOURS = new Map<string, number>([
+  ['5h', SESSION_PERIOD_HOURS],
+  ['five-hour', SESSION_PERIOD_HOURS],
+  ['five_hour', SESSION_PERIOD_HOURS],
+  ['daily', 24],
+  ['day', 24],
+  ['weekly', WEEK_HOURS],
+  ['week', WEEK_HOURS],
+  ['monthly', 24 * 30],
+  ['month', 24 * 30],
+]);
+
+const bucketWindowHours = (window: string | undefined): number | null =>
+  typeof window === 'string'
+    ? (BUCKET_WINDOW_HOURS.get(window.trim().toLowerCase().replace(/\s+/g, ' ')) ?? null)
+    : null;
 
 interface PercentUsedWindowLike {
   id?: string;
@@ -143,9 +171,38 @@ interface MetaWindowLike {
   durationMinutes?: number;
 }
 
-const fromPercentUsedWindows = (windows: readonly PercentUsedWindowLike[]): LedgerWindow[] =>
+const stableParams = (params: Record<string, string | number>): string =>
+  Object.keys(params)
+    .sort()
+    .map((name) => `${name}=${params[name]}`)
+    .join(',');
+
+/** A key from what a window *means*: its label key plus any parameters. */
+const semanticKey = (labelKey: string, params?: Record<string, string | number>): string =>
+  params && Object.keys(params).length > 0 ? `${labelKey}:${stableParams(params)}` : labelKey;
+
+type WindowKeyFn = (window: PercentUsedWindowLike, index: number) => string;
+
+const windowIdKey: WindowKeyFn = (window, index) => window.id || `window-${index}`;
+
+/**
+ * Codex model-scoped windows (`additional_rate_limits`) carry their position
+ * in that list in the id (`gpt-5-3-codex-spark-weekly-0`), and accounts list
+ * those limits in different orders. They are the only Codex windows with label
+ * parameters (the model name), so those are keyed by meaning — label key and
+ * name — the way Kimi rows are. The fixed windows keep their semantic ids.
+ */
+const codexWindowKey: WindowKeyFn = (window, index) =>
+  window.labelKey && window.labelParams && Object.keys(window.labelParams).length > 0
+    ? semanticKey(window.labelKey, window.labelParams)
+    : windowIdKey(window, index);
+
+const fromPercentUsedWindows = (
+  windows: readonly PercentUsedWindowLike[],
+  keyFor: WindowKeyFn
+): LedgerWindow[] =>
   windows.map((window, index) => ({
-    key: window.id || `window-${index}`,
+    key: keyFor(window, index),
     label: window.label ?? '',
     labelKey: window.labelKey,
     labelParams: window.labelParams,
@@ -191,46 +248,44 @@ const fromXaiBilling = (billing: XaiBillingLike | null | undefined): LedgerWindo
   ];
 };
 
+/**
+ * Bucket labels repeat per model group ("Weekly limit" twice), so every bucket
+ * carries its group as `scope`. Whether labels show it depends on how many
+ * groups the *provider* has across all credentials — see `collectLedgerKinds`
+ * — so a column reads the same in every row and in the summary.
+ */
 const fromBucketGroups = (
   provider: 'antigravity' | 'plugin',
   groups: readonly BucketGroupLike[]
-): LedgerWindow[] => {
-  // Bucket labels repeat per model group ("Weekly limit" twice); qualify them
-  // with the group only when there is more than one group to tell apart.
-  const qualify = groups.length > 1;
-  return groups.flatMap((group, groupIndex) =>
-    (group.buckets ?? []).map((bucket, bucketIndex): LedgerWindow => {
+): LedgerWindow[] =>
+  groups.flatMap((group, groupIndex) => {
+    const groupLabel = (group.label ?? '').trim();
+    const groupLabelKey =
+      provider === 'antigravity' ? resolveAntigravityGroupLabelKey(groupLabel) : null;
+    const scope = groupLabel
+      ? {
+          label: groupLabel,
+          labelKey: groupLabelKey ? `antigravity_quota.${groupLabelKey}` : undefined,
+        }
+      : undefined;
+    return (group.buckets ?? []).map((bucket, bucketIndex): LedgerWindow => {
       const bucketLabelKey =
         provider === 'antigravity'
           ? resolveAntigravityBucketLabelKey(bucket.label ?? '', bucket.window)
           : null;
-      const groupLabelKey =
-        provider === 'antigravity' ? resolveAntigravityGroupLabelKey(group.label ?? '') : null;
       const fraction = finiteOrNull(bucket.remainingFraction);
       return {
         key: `${group.id || `group-${groupIndex}`}/${bucket.id || `bucket-${bucketIndex}`}`,
         label: bucket.label ?? '',
         labelKey: bucketLabelKey ? `antigravity_quota.${bucketLabelKey}` : undefined,
-        scope: qualify
-          ? {
-              label: group.label ?? '',
-              labelKey: groupLabelKey ? `antigravity_quota.${groupLabelKey}` : undefined,
-            }
-          : undefined,
+        scope,
         // Remaining FRACTION, the inverse of the percent-used providers.
         remaining: fraction === null ? null : clampPercent(fraction * 100),
         resetAtMs: instantOrNull(bucket.resetAtMs),
-        periodHours: positiveOrNull(bucket.periodHours),
+        periodHours: positiveOrNull(bucket.periodHours) ?? bucketWindowHours(bucket.window),
       };
-    })
-  );
-};
-
-const stableParams = (params: Record<string, string | number>): string =>
-  Object.keys(params)
-    .sort()
-    .map((name) => `${name}=${params[name]}`)
-    .join(',');
+    });
+  });
 
 /**
  * Kimi row ids are positional (`limit-0`), so the key comes from what the row
@@ -240,9 +295,7 @@ const stableParams = (params: Record<string, string | number>): string =>
 const fromKimiRows = (rows: readonly KimiRowLike[]): LedgerWindow[] =>
   rows.map((row, index): LedgerWindow => {
     const key = row.labelKey
-      ? row.labelParams
-        ? `${row.labelKey}:${stableParams(row.labelParams)}`
-        : row.labelKey
+      ? semanticKey(row.labelKey, row.labelParams)
       : row.label
         ? `label:${row.label}`
         : row.id || `row-${index}`;
@@ -310,7 +363,10 @@ export function extractLedgerWindows(
     case 'claude':
     case 'codex':
       return withUniqueKeys(
-        fromPercentUsedWindows((quota as { windows?: PercentUsedWindowLike[] }).windows ?? [])
+        fromPercentUsedWindows(
+          (quota as { windows?: PercentUsedWindowLike[] }).windows ?? [],
+          provider === 'codex' ? codexWindowKey : windowIdKey
+        )
       );
     case 'devin':
       return withUniqueKeys(
@@ -436,6 +492,12 @@ export interface LedgerKind {
   average: number | null;
   /** Earliest reset still in the future, across credentials. */
   soonestResetAtMs: number | null;
+  /**
+   * Whether this column's label names its group (`sample.scope`). Decided once
+   * per provider — true when its credentials span more than one group — so
+   * every cell of a column and the summary share one label.
+   */
+  qualifyScope: boolean;
 }
 
 export interface LedgerCredentialInput {
@@ -461,17 +523,41 @@ export interface LedgerProviderModel {
   columns: LedgerKind[];
   /** Non-headline kinds, most constrained (lowest average remaining) first. */
   others: LedgerKind[];
+  /** Window labels name their group: the credentials span more than one group. */
+  qualifyScopes: boolean;
   /** 100 × credentials in scope — the denominator of the headline total. */
   capacity: number;
   /** One per credential in input order: its remaining for the headline kind. */
   segments: LedgerSegment[];
 }
 
+const scopeIdentity = (window: LedgerWindow): string | null =>
+  window.scope ? window.scope.labelKey || window.scope.label || null : null;
+
+/**
+ * Whether window labels must name their group: only when the provider's
+ * credentials, taken together, span more than one group. Deciding this per
+ * credential made one column read "Weekly limit" in one row and "Gemini ·
+ * Weekly limit" in the next, and the summary label depend on row order.
+ */
+const spansScopes = (credentials: readonly LedgerCredentialInput[]): boolean => {
+  const scopes = new Set<string>();
+  for (const credential of credentials) {
+    for (const window of credential.windows ?? []) {
+      const scope = scopeIdentity(window);
+      if (scope !== null) scopes.add(scope);
+      if (scopes.size > 1) return true;
+    }
+  }
+  return false;
+};
+
 /** Union of window keys across credentials, in order of first appearance. */
 export function collectLedgerKinds(
   credentials: readonly LedgerCredentialInput[],
   nowMs: number
 ): LedgerKind[] {
+  const qualify = spansScopes(credentials);
   const kinds = new Map<string, LedgerKind>();
   for (const credential of credentials) {
     for (const window of credential.windows ?? []) {
@@ -486,6 +572,7 @@ export function collectLedgerKinds(
           reported: 0,
           average: null,
           soonestResetAtMs: null,
+          qualifyScope: qualify && window.scope !== undefined,
         };
         kinds.set(window.key, kind);
       }
@@ -574,6 +661,7 @@ export function buildLedgerProviderModel(
     headline,
     columns: orderLedgerColumns(kinds, headline),
     others: kinds.filter((kind) => kind.key !== headline?.key).sort(compareConstraint),
+    qualifyScopes: kinds.some((kind) => kind.qualifyScope),
     capacity: 100 * credentials.length,
     segments: credentials.map((credential) => ({
       id: credential.id,
@@ -629,10 +717,23 @@ export function formatLedgerPercent(value: number | null): string {
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
-/** Localized window label, qualified by its group when it has one. */
-export function formatLedgerWindowLabel(t: Translate, window: LedgerWindow): string {
+/**
+ * Localized window label, prefixed by its group when `qualifyScope` says so.
+ * Pass the column's `LedgerKind.qualifyScope` — a provider-level decision —
+ * so every cell of a column reads the same.
+ */
+export function formatLedgerWindowLabel(
+  t: Translate,
+  window: LedgerWindow,
+  qualifyScope: boolean
+): string {
   const base = window.labelKey ? t(window.labelKey, window.labelParams) : window.label;
-  if (!window.scope) return base;
+  if (!qualifyScope || !window.scope) return base;
   const scope = window.scope.labelKey ? t(window.scope.labelKey) : window.scope.label;
   return scope ? `${scope} · ${base}` : base;
+}
+
+/** The label every cell of a column, and the summary, show for it. */
+export function formatLedgerKindLabel(t: Translate, kind: LedgerKind): string {
+  return formatLedgerWindowLabel(t, kind.sample, kind.qualifyScope);
 }

@@ -15,6 +15,7 @@ import {
   buildLedgerProviderModels,
   collectLedgerKinds,
   extractLedgerWindows,
+  formatLedgerKindLabel,
   formatLedgerPercent,
   formatLedgerWindowLabel,
   orderLedgerColumns,
@@ -27,7 +28,7 @@ import {
   type LedgerWindow,
 } from '@/features/quota/ledgerModel';
 import { parseMetaQuotaPayload } from '@/services/api/metaQuota';
-import { buildKimiQuotaRows } from '@/utils/quota';
+import { buildAntigravityQuotaGroups, buildKimiQuotaRows } from '@/utils/quota';
 import { DAY_MS, HOUR_MS } from '@/utils/time/durations';
 import type { ClaudeQuotaState, CodexQuotaState, MetaQuotaState } from '@/types';
 import { metaQuotaResponse } from './fixtures/metaQuota';
@@ -502,7 +503,7 @@ describe('extractLedgerWindows: other providers', () => {
     expect(first?.map((window) => [window.key, window.remaining, window.periodHours])).toEqual([
       ['five-hour', 90, 5],
       ['weekly', 17, 168],
-      ['gpt-5-3-codex-spark-weekly-0', 100, 168],
+      ['codex_quota.additional_secondary_window:name=GPT-5.3-Codex-Spark', 100, 168],
     ]);
     // The subscription renewal date is never a window.
     expect(first?.some((window) => window.resetAtMs === NOW + 20 * DAY_MS)).toBe(false);
@@ -521,8 +522,60 @@ describe('extractLedgerWindows: other providers', () => {
     expect(model.columns.map((kind) => kind.key)).toEqual([
       'weekly',
       'five-hour',
-      'gpt-5-3-codex-spark-weekly-0',
+      'codex_quota.additional_secondary_window:name=GPT-5.3-Codex-Spark',
     ]);
+  });
+
+  test('Codex: a model-scoped limit lines up whatever its position in additional_rate_limits', () => {
+    const additional = (name: string, used: number, resetMs: number) => ({
+      limit_name: name,
+      rate_limit: {
+        primary_window: {
+          used_percent: used,
+          limit_window_seconds: 18000,
+          reset_at: Math.floor((resetMs - 4 * DAY_MS) / 1000),
+        },
+        secondary_window: {
+          used_percent: used,
+          limit_window_seconds: 604800,
+          reset_at: Math.floor(resetMs / 1000),
+        },
+      },
+    });
+    const codex = (limits: ReturnType<typeof additional>[]) =>
+      extractLedgerWindows('codex', {
+        status: 'success',
+        windows: buildCodexQuotaWindows({ additional_rate_limits: limits }, t),
+      });
+
+    // A lists only Spark; B lists Codex-Mini first, so Spark sits at index 1.
+    const a = codex([additional('GPT-5.3-Codex-Spark', 90, NOW + 5 * DAY_MS)]);
+    const b = codex([
+      additional('GPT-5.1-Codex-Mini', 50, NOW + 6 * DAY_MS),
+      additional('GPT-5.3-Codex-Spark', 80, NOW + 4 * DAY_MS),
+    ]);
+    const sparkWeekly = 'codex_quota.additional_secondary_window:name=GPT-5.3-Codex-Spark';
+    expect(a?.map((window) => window.key)).toContain(sparkWeekly);
+    expect(b?.map((window) => window.key)).toContain(sparkWeekly);
+
+    const model = buildLedgerProviderModel(
+      'codex',
+      [
+        { id: 'a', windows: a },
+        { id: 'b', windows: b },
+      ],
+      NOW
+    );
+    // One Spark weekly kind reported by both, plus Mini's weekly and both 5-hour windows.
+    expect(model.kinds.filter((kind) => kind.key === sparkWeekly)).toHaveLength(1);
+    expect(model.kinds).toHaveLength(4);
+    const spark = model.kinds.find((kind) => kind.key === sparkWeekly);
+    expect(spark?.reported).toBe(2);
+    expect(spark?.total).toBe(30);
+    expect(spark?.soonestResetAtMs).toBe(NOW + 4 * DAY_MS);
+    // Spark is the most constrained weekly limit, so it leads with both segments known.
+    expect(model.headline?.key).toBe(sparkWeekly);
+    expect(model.segments.map((segment) => segment.remaining)).toEqual([10, 20]);
   });
 
   test('xAI: the weekly limit is a window even when usage is unavailable', () => {
@@ -673,12 +726,104 @@ describe('extractLedgerWindows: other providers', () => {
         periodHours: 5,
       },
     ]);
-    expect(formatLedgerWindowLabel(t, windows![0])).toBe(
-      'antigravity_quota.group_gemini_models · antigravity_quota.weekly_limit'
-    );
+    const model = buildLedgerProviderModel('antigravity', [{ id: 'a', windows }], NOW);
+    expect(model.qualifyScopes).toBe(true);
+    expect(model.kinds.map((kind) => formatLedgerKindLabel(t, kind))).toEqual([
+      'antigravity_quota.group_gemini_models · antigravity_quota.weekly_limit',
+      'antigravity_quota.group_claude_gpt_models · antigravity_quota.five_hour_limit',
+    ]);
   });
 
-  test('plugin buckets keep their raw labels; a single group is not qualified', () => {
+  test('Antigravity: whether labels name the group is decided per provider, not per row', () => {
+    const group = (displayName: string, remainingFraction: number) => ({
+      displayName,
+      buckets: [{ window: 'weekly', displayName: 'Weekly Limit', remainingFraction }],
+    });
+    const credential = (groups: ReturnType<typeof group>[]) =>
+      extractLedgerWindows('antigravity', {
+        status: 'success',
+        groups: buildAntigravityQuotaGroups({ groups }),
+      });
+    // A reports one group; B reports two. Order must not change any label.
+    const a = credential([group('Gemini Models', 0.4)]);
+    const b = credential([group('Gemini Models', 0.6), group('Claude and GPT Models', 0.9)]);
+    const geminiKey = a![0].key;
+    expect(b![0].key).toBe(geminiKey);
+
+    for (const order of [
+      [
+        { id: 'a', windows: a },
+        { id: 'b', windows: b },
+      ],
+      [
+        { id: 'b', windows: b },
+        { id: 'a', windows: a },
+      ],
+    ]) {
+      const model = buildLedgerProviderModel('antigravity', order, NOW);
+      expect(model.qualifyScopes).toBe(true);
+      const gemini = model.kinds.find((kind) => kind.key === geminiKey)!;
+      const expected = 'antigravity_quota.group_gemini_models · antigravity_quota.weekly_limit';
+      // Summary label and every row's cell in the column read the same.
+      expect(model.headline?.key).toBe(geminiKey);
+      expect(formatLedgerKindLabel(t, model.headline!)).toBe(expected);
+      expect(formatLedgerWindowLabel(t, a![0], gemini.qualifyScope)).toBe(expected);
+      expect(formatLedgerWindowLabel(t, b![0], gemini.qualifyScope)).toBe(expected);
+    }
+
+    // With only single-group credentials there is nothing to tell apart.
+    const solo = buildLedgerProviderModel('antigravity', [{ id: 'a', windows: a }], NOW);
+    expect(solo.qualifyScopes).toBe(false);
+    expect(formatLedgerKindLabel(t, solo.headline!)).toBe('antigravity_quota.weekly_limit');
+  });
+
+  test('bucket daily/monthly windows get a period, so the longest one leads', () => {
+    const windows = extractLedgerWindows('plugin', {
+      status: 'success',
+      groups: buildAntigravityQuotaGroups({
+        groups: [
+          {
+            displayName: 'Plan',
+            buckets: [
+              { window: 'monthly', displayName: 'Monthly', remainingFraction: 0.1 },
+              { window: 'weekly', displayName: 'Weekly', remainingFraction: 0.8 },
+              { window: 'daily', displayName: 'Daily', remainingFraction: 0.5 },
+            ],
+          },
+        ],
+      }),
+    });
+    expect(windows?.map((window) => [window.label, window.remaining, window.periodHours])).toEqual(
+      expect.arrayContaining([
+        ['Monthly', 10, 720],
+        ['Weekly', 80, 168],
+        ['Daily', 50, 24],
+      ])
+    );
+    const model = buildLedgerProviderModel('plugin', [{ id: 'p', windows }], NOW);
+    expect(model.headline?.sample.label).toBe('Monthly');
+    expect(model.headline?.total).toBe(10);
+
+    // Only daily and monthly: still longest-first rather than lowest average.
+    const dailyMonthly = extractLedgerWindows('plugin', {
+      status: 'success',
+      groups: [
+        {
+          id: 'g',
+          label: 'Plan',
+          buckets: [
+            { id: 'd', label: 'Daily', window: 'Daily', remainingFraction: 0.05 },
+            { id: 'm', label: 'Monthly', window: ' month ', remainingFraction: 0.9 },
+          ],
+        },
+      ],
+    });
+    expect(
+      buildLedgerProviderModel('plugin', [{ id: 'p', windows: dailyMonthly }], NOW).headline?.key
+    ).toBe('g/m');
+  });
+
+  test('plugin buckets keep their raw labels; a single group is not named', () => {
     const windows = extractLedgerWindows('plugin', {
       status: 'success',
       summary: [],
@@ -697,13 +842,18 @@ describe('extractLedgerWindows: other providers', () => {
         key: 'g/daily',
         label: 'Daily tokens',
         labelKey: undefined,
-        scope: undefined,
+        scope: { label: 'Plan', labelKey: undefined },
         remaining: 50,
         resetAtMs: null,
         periodHours: 24,
       },
     ]);
-    expect(formatLedgerWindowLabel(t, windows![0])).toBe('Daily tokens');
+    const model = buildLedgerProviderModel('plugin', [{ id: 'p', windows }], NOW);
+    expect(model.qualifyScopes).toBe(false);
+    expect(formatLedgerKindLabel(t, model.kinds[0])).toBe('Daily tokens');
+    expect(formatLedgerWindowLabel(t, windows![0], model.kinds[0].qualifyScope)).toBe(
+      'Daily tokens'
+    );
   });
 
   test('Devin: remaining percent windows keyed by id', () => {
@@ -932,24 +1082,46 @@ describe('ledger formatting', () => {
     const translate = (key: string, params?: Record<string, string | number>) =>
       params ? `${key}(${JSON.stringify(params)})` : `T:${key}`;
     expect(
-      formatLedgerWindowLabel(translate, {
-        key: 'k',
-        label: 'Stored',
-        labelKey: 'kimi_quota.limit_window',
-        labelParams: { duration: '5h' },
-        remaining: null,
-        resetAtMs: null,
-        periodHours: null,
-      })
+      formatLedgerWindowLabel(
+        translate,
+        {
+          key: 'k',
+          label: 'Stored',
+          labelKey: 'kimi_quota.limit_window',
+          labelParams: { duration: '5h' },
+          remaining: null,
+          resetAtMs: null,
+          periodHours: null,
+        },
+        false
+      )
     ).toBe('kimi_quota.limit_window({"duration":"5h"})');
     expect(
-      formatLedgerWindowLabel(translate, {
-        key: 'k',
-        label: 'Stored',
-        remaining: null,
-        resetAtMs: null,
-        periodHours: null,
-      })
+      formatLedgerWindowLabel(
+        translate,
+        {
+          key: 'k',
+          label: 'Stored',
+          remaining: null,
+          resetAtMs: null,
+          periodHours: null,
+        },
+        false
+      )
     ).toBe('Stored');
+  });
+
+  test('a scope shows only when the provider-level flag asks for it', () => {
+    const scoped: LedgerWindow = {
+      key: 'g/w',
+      label: 'Weekly',
+      scope: { label: 'Group A' },
+      remaining: null,
+      resetAtMs: null,
+      periodHours: null,
+    };
+    expect(formatLedgerWindowLabel(t, scoped, true)).toBe('Group A · Weekly');
+    expect(formatLedgerWindowLabel(t, scoped, false)).toBe('Weekly');
+    expect(formatLedgerWindowLabel(t, { ...scoped, scope: undefined }, true)).toBe('Weekly');
   });
 });

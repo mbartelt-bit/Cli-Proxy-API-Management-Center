@@ -19,6 +19,7 @@ import { formatQuotaIdentity } from '@/utils/quota/identity';
 import { QUOTA_ADAPTERS, type QuotaCardState } from '../providers';
 import { isQuotaRefreshDisabled, type QuotaFileEntry } from '../logic';
 import {
+  formatLedgerKindLabel,
   formatLedgerPercent,
   formatLedgerWindowLabel,
   quotaTier,
@@ -121,11 +122,17 @@ export function QuotaLedgerRow({
       const window = windows.find((candidate) => candidate.key === column.key);
       const muted = index >= FULL_EMPHASIS_COLUMNS;
       return window ? (
-        <LedgerWindowCell key={column.key} window={window} muted={muted} now={now} />
+        <LedgerWindowCell
+          key={column.key}
+          window={window}
+          qualifyScope={column.qualifyScope}
+          muted={muted}
+          now={now}
+        />
       ) : (
         <LedgerMissingCell
           key={column.key}
-          label={formatLedgerWindowLabel(t, column.sample)}
+          label={formatLedgerKindLabel(t, column)}
           muted={muted}
         />
       );
@@ -249,10 +256,13 @@ export function QuotaLedgerRow({
 
 function LedgerWindowCell({
   window,
+  qualifyScope,
   muted,
   now,
 }: {
   window: LedgerWindow;
+  /** The column's provider-level decision, so every row labels it alike. */
+  qualifyScope: boolean;
   muted: boolean;
   now: number;
 }) {
@@ -263,7 +273,7 @@ function LedgerWindowCell({
   return (
     <div className={styles.cell} data-emphasis={muted ? 'muted' : undefined}>
       <div className={styles.cellHead}>
-        <span className={styles.cellLabel}>{formatLedgerWindowLabel(t, window)}</span>
+        <span className={styles.cellLabel}>{formatLedgerWindowLabel(t, window, qualifyScope)}</span>
         <span
           className={styles.cellPercent}
           title={notReported ? t('quota_management.ledger_not_reported') : undefined}
