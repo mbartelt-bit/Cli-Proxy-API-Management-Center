@@ -5,21 +5,29 @@
  * so the quota page masks them by default. Masking keeps just enough shape to
  * tell credentials apart at a glance — the first character of the mailbox and
  * of the domain, plus the full suffix — without putting the address on screen.
+ * The provider prefix and identity hashes the backend writes around the email
+ * stay readable.
  *
  * Pure string helpers: search and every request keep using the raw values.
  */
 
 const MASK = '•••';
 
-/**
- * Email-shaped substring. The local part deliberately excludes `-` so a
- * provider prefix such as `claude-` survives in front of the masked mailbox,
- * and the domain swallows any trailing dotted suffix (`.json`), which the mask
- * keeps verbatim anyway.
- */
-const EMAIL_PATTERN = /[A-Za-z0-9._%+]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
-
 const firstChar = (value: string): string => Array.from(value)[0] ?? '';
+
+/**
+ * `local` + `separator` + `domain` with the mailbox reduced to its first
+ * character and the domain to the first character of its first label plus
+ * everything from the first dot on.
+ */
+const maskAddressParts = (local: string, separator: string, domain: string): string => {
+  const dot = domain.indexOf('.');
+  const firstLabel = dot < 0 ? domain : domain.slice(0, dot);
+  const suffix = dot < 0 ? '' : domain.slice(dot);
+  const maskedLocal = local ? `${firstChar(local)}${MASK}` : '';
+  const maskedDomain = `${firstLabel ? `${firstChar(firstLabel)}${MASK}` : ''}${suffix}`;
+  return `${maskedLocal}${separator}${maskedDomain}`;
+};
 
 /**
  * `theo@t3.gg` → `t•••@t•••.gg`.
@@ -31,48 +39,225 @@ const firstChar = (value: string): string => Array.from(value)[0] ?? '';
 export function maskEmail(email: string): string {
   const at = email.lastIndexOf('@');
   if (at < 0) return email;
-
-  const local = email.slice(0, at);
-  const domain = email.slice(at + 1);
-  const dot = domain.indexOf('.');
-  const firstLabel = dot < 0 ? domain : domain.slice(0, dot);
-  const suffix = dot < 0 ? '' : domain.slice(dot);
-
-  const maskedLocal = local ? `${firstChar(local)}${MASK}` : '';
-  const maskedDomain = `${firstLabel ? `${firstChar(firstLabel)}${MASK}` : ''}${suffix}`;
-  return `${maskedLocal}@${maskedDomain}`;
+  return maskAddressParts(email.slice(0, at), '@', email.slice(at + 1));
 }
 
-/** Replace every case-insensitive occurrence of `needle` in `haystack`. */
-const replaceAllInsensitive = (haystack: string, needle: string, replacement: string): string => {
-  const lowerHaystack = haystack.toLowerCase();
-  const lowerNeedle = needle.toLowerCase();
-  let result = '';
-  let cursor = 0;
-  let index = lowerHaystack.indexOf(lowerNeedle);
-  while (index >= 0) {
-    result += haystack.slice(cursor, index) + replacement;
-    cursor = index + needle.length;
-    index = lowerHaystack.indexOf(lowerNeedle, cursor);
-  }
-  return result + haystack.slice(cursor);
+/* ------------------------------------------------- backend email spellings */
+
+/** One way the backend may have written a known email into a filename. */
+interface EmailSpelling {
+  text: string;
+  mask: string;
+}
+
+/**
+ * A sanitized spelling and its mask. The backend sanitizers map one rune to
+ * one ASCII character, so the email's `@` sits at the same code-point index
+ * in the sanitized text (shifted only by characters trimmed from the front).
+ */
+const sanitizedSpelling = (text: string, separatorIndex: number): EmailSpelling => ({
+  text,
+  mask:
+    separatorIndex < 0 || separatorIndex >= text.length
+      ? text
+        ? `${firstChar(text)}${MASK}`
+        : ''
+      : maskAddressParts(
+          text.slice(0, separatorIndex),
+          text.charAt(separatorIndex),
+          text.slice(separatorIndex + 1)
+        ),
+});
+
+const META_KEPT_RUNE = /^[A-Za-z0-9._-]$/;
+const META_MAX_SANITIZED_LENGTH = 120;
+
+/**
+ * Meta: `meta-<sanitized>-<16 hex>.json`, where every rune outside
+ * `[A-Za-z0-9._-]` (the `@` included) becomes `_`, truncated to 120 bytes —
+ * all ASCII by then, so 120 characters. Mirrors `CredentialFileName` in
+ * CLIProxyAPI internal/auth/meta/meta.go.
+ */
+const metaSpelling = (email: string): EmailSpelling => {
+  const runes = Array.from(email);
+  const at = runes.lastIndexOf('@');
+  const text = runes
+    .map((rune) => (META_KEPT_RUNE.test(rune) ? rune : '_'))
+    .join('')
+    .slice(0, META_MAX_SANITIZED_LENGTH);
+  return sanitizedSpelling(text, at);
 };
+
+const XAI_KEPT_RUNE = /^[A-Za-z0-9@._-]$/;
+
+/**
+ * xAI: `xai-<sanitized>.json`, where every rune outside `[A-Za-z0-9@._-]`
+ * becomes `-` and leading/trailing `-` are trimmed. Mirrors
+ * `sanitizeFileSegment` in CLIProxyAPI internal/auth/xai/token.go.
+ */
+const xaiSpelling = (email: string): EmailSpelling => {
+  const mapped = Array.from(email)
+    .map((rune) => (XAI_KEPT_RUNE.test(rune) ? rune : '-'))
+    .join('');
+  const text = mapped.replace(/^-+|-+$/g, '');
+  return sanitizedSpelling(text, text.lastIndexOf('@'));
+};
+
+/**
+ * Every spelling of `email` a backend-written filename can contain, longest
+ * first. Claude, Codex and Antigravity embed the trimmed email verbatim; Meta
+ * and xAI sanitize it (see above); Devin, Kimi and Vertex never embed it. The
+ * sanitizers run on the email exactly as stored and on both Unicode
+ * normalization forms, since a sanitized rune count depends on composition.
+ */
+const knownEmailSpellings = (email: string): EmailSpelling[] => {
+  const spellings = new Map<string, string>();
+  const add = ({ text, mask }: EmailSpelling) => {
+    if (text && !spellings.has(text)) spellings.set(text, mask);
+  };
+  const composed = email.normalize('NFC');
+  add({ text: composed, mask: maskEmail(composed) });
+  for (const form of new Set([email, composed, email.normalize('NFD')])) {
+    add(metaSpelling(form));
+    add(xaiSpelling(form));
+  }
+  return [...spellings]
+    .map(([text, mask]) => ({ text, mask }))
+    .sort((a, b) => b.text.length - a.text.length);
+};
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Replace every case-insensitive occurrence of any spelling in one pass over
+ * the original string. Matching with a RegExp rather than indexing into a
+ * lower-cased copy keeps offsets right when lower-casing changes length
+ * (`İ` lower-cases to two code units).
+ */
+const replaceSpellings = (haystack: string, spellings: readonly EmailSpelling[]): string => {
+  if (spellings.length === 0) return haystack;
+  const pattern = new RegExp(
+    spellings.map((spelling) => `(${escapeRegExp(spelling.text)})`).join('|'),
+    'giu'
+  );
+  return haystack.replace(pattern, (...args: unknown[]) => {
+    const index = args.slice(1, 1 + spellings.length).findIndex((group) => group !== undefined);
+    return spellings[index]?.mask ?? MASK;
+  });
+};
+
+/* ------------------------------------------------------------- fallbacks */
+
+/**
+ * Meta's filename shape, for a Meta credential whose email is unknown or no
+ * longer matches: the account part between the prefix and the identity hash
+ * is a sanitized email (no `@` left to find). The last `_` stands in for the
+ * `@`; if it was really a sanitized domain character, the mask still hides
+ * all but two characters and the dotted suffix.
+ */
+const META_FILE_SHAPE = /^(meta-)(.+)(-[0-9a-f]{16}\.json)$/i;
+
+const maskMetaFileShape = (name: string): string => {
+  const match = META_FILE_SHAPE.exec(name);
+  if (!match) return name;
+  const [, prefix, account, suffix] = match;
+  // Already masked, or an address the general pattern handles.
+  if (account.includes(MASK) || account.includes('@')) return name;
+  return `${prefix}${sanitizedSpelling(account, account.lastIndexOf('_')).mask}${suffix}`;
+};
+
+/**
+ * Leading tokens the backend writes in front of an email (CLIProxyAPI
+ * internal/auth/{antigravity,claude,codex,devin,meta,xai} filename builders,
+ * plus Kimi and Vertex), longest first so `kimi-ai` wins over `kimi`.
+ */
+const CREDENTIAL_FILE_PREFIXES = [
+  'antigravity',
+  'kimi-ai',
+  'claude',
+  'vertex',
+  'codex',
+  'devin',
+  'kimi',
+  'meta',
+  'xai',
+];
+
+/** Claude and Codex put an 8-hex identity hash between prefix and email. */
+const HASHED_FILE_PREFIXES = new Set(['claude', 'codex']);
+const IDENTITY_HASH = /^[0-9a-f]{8}-/i;
+
+const PROVIDER_TOKEN = /^[a-z0-9][a-z0-9._-]*$/;
+
+/**
+ * The readable head of a credential name: the provider prefix (the
+ * credential's own type first, then the backend's known prefixes) and, for
+ * Claude and Codex, the identity hash after it. Empty when none leads.
+ */
+const readablePrefix = (name: string, provider?: string | null): string => {
+  const hint = typeof provider === 'string' ? provider.trim().toLowerCase() : '';
+  const candidates = PROVIDER_TOKEN.test(hint)
+    ? [hint, ...CREDENTIAL_FILE_PREFIXES]
+    : CREDENTIAL_FILE_PREFIXES;
+  for (const candidate of candidates) {
+    const token = `${candidate}-`;
+    // Compare a slice of the original so offsets never come from a case-mapped copy.
+    if (name.slice(0, token.length).toLowerCase() !== token) continue;
+    const hash = HASHED_FILE_PREFIXES.has(candidate)
+      ? (IDENTITY_HASH.exec(name.slice(token.length))?.[0] ?? '')
+      : '';
+    return name.slice(0, token.length + hash.length);
+  }
+  return '';
+};
+
+/**
+ * Email-shaped substring, Unicode-aware. The mailbox takes letters, digits,
+ * marks and symbols in any script plus RFC 5322 atext (`-` and `.` too, but
+ * not as its first character), so a hyphenated or accented mailbox is masked
+ * whole; the domain swallows any trailing dotted suffix (`.json`,
+ * `.com-team.json`), which the mask keeps verbatim anyway. Provider prefixes
+ * are protected by `readablePrefix`, not by the pattern stopping at a `-`.
+ */
+const MAILBOX_LEAD = "\\p{L}\\p{N}\\p{M}\\p{So}!#$%&'*+/=?^_`{|}~";
+const DOMAIN_LABEL = '[\\p{L}\\p{N}\\p{M}-]+';
+const EMAIL_PATTERN = new RegExp(
+  `[${MAILBOX_LEAD}][${MAILBOX_LEAD}.-]*@${DOMAIN_LABEL}(?:\\.${DOMAIN_LABEL})+`,
+  'gu'
+);
 
 /**
  * Mask the identity a credential is displayed under.
  *
- * A known account email is replaced wherever it occurs in `name` (case
- * insensitive — filenames are often lower-cased). Any remaining email-shaped
- * substring is then masked by pattern, so an unknown or mismatched `email`
- * still never leaks an address. The masked form contains no pattern match of
- * its own, so masking is idempotent. Names without an email pass through.
+ * A known account email is replaced wherever it occurs in `name` — verbatim
+ * or in the sanitized spelling Meta and xAI filenames use, case-insensitively
+ * and after Unicode NFC normalization — leaving the provider prefix and any
+ * identity hash readable. Then, so an unknown or mismatched `email` still
+ * never leaks an address, a Meta-shaped name has its account part masked and
+ * any remaining email-shaped substring is masked by pattern; `provider` (the
+ * credential's type) keeps its prefix readable in front of it.
+ *
+ * Masked output contains no match of its own, so masking is idempotent.
+ * Names without an email pass through unchanged.
  */
-export function maskIdentity(name: string, email?: string | null): string {
+export function maskIdentity(
+  name: string,
+  email?: string | null,
+  provider?: string | null
+): string {
   if (!name) return name;
-  let result = name;
+  const normalized = name.normalize('NFC');
+  let result = normalized;
+
   const known = typeof email === 'string' ? email.trim() : '';
   if (known.includes('@')) {
-    result = replaceAllInsensitive(result, known, maskEmail(known));
+    result = replaceSpellings(result, knownEmailSpellings(known));
   }
-  return result.replace(EMAIL_PATTERN, (match) => maskEmail(match));
+
+  result = maskMetaFileShape(result);
+
+  const prefix = readablePrefix(result, provider);
+  result = prefix + result.slice(prefix.length).replace(EMAIL_PATTERN, (match) => maskEmail(match));
+
+  return result === normalized ? name : result;
 }
