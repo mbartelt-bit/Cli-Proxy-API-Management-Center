@@ -41,8 +41,8 @@
  * Declared below the container so the units resolve against it. */
 .group {
   --ledger-gap: 24px;
-  --ledger-identity: clamp(184px, 21cqi, 280px);
-  --ledger-window: clamp(140px, 14cqi, 184px);
+  --ledger-identity: clamp(184px, 23cqi, 300px);
+  --ledger-window: clamp(140px, 15.2cqi, 184px);
   /* Narrowest the actions track may get beside the windows. */
   --ledger-actions-min: 150px;
 
