@@ -8,10 +8,12 @@
  * sit in a wrapping track, so a group with more windows than fit continues on
  * a second line at the same column positions. A label that does not fit keeps
  * its window name first and offers the full text as a tooltip; a group name
- * that tells repeated windows apart gets a line of its own. Behavioural parity with `QuotaCard`: the same
- * refresh/reset disable rules, the same error mapping, Claude observations
- * kept visible while refreshing, and the Claude reset-grant and Codex
- * reset-credit actions whenever the card would offer them.
+ * that tells repeated windows apart gets a line of its own.
+ *
+ * Behavioural parity with `QuotaCard`: the same refresh/reset disable rules,
+ * the same error mapping, Claude observations kept visible while refreshing,
+ * and the Claude reset-grant and Codex reset-credit actions whenever the card
+ * would offer them.
  */
 
 import { useTranslation } from 'react-i18next';
