@@ -69,8 +69,8 @@ describe('maskIdentity', () => {
  * Filenames exactly as CLIProxyAPI writes them (internal/auth/*: claude and
  * codex filename.go, antigravity filename.go, xai token.go, meta meta.go,
  * devin record.go; Kimi and Vertex embed no email). Each must hide the address
- * while the provider prefix and any identity hash stay readable — with the
- * account email known, and without it.
+ * while the provider prefix stays readable, with the account email known and
+ * without it. Identity hashes stay readable only with the email known.
  */
 describe('maskIdentity: backend credential filenames', () => {
   const cases: {
@@ -145,6 +145,25 @@ describe('maskIdentity: backend credential filenames', () => {
       email: 'élodie@x.fr',
       masked: 'xai-l•••@x•••.fr.json',
     },
+    // The NFD spelling of an accented I ("I-caro@…") must not match the "i-" of "xai-".
+    {
+      provider: 'xai',
+      name: 'xai-caro@gmail.com.json',
+      email: 'Ícaro@gmail.com',
+      masked: 'xai-c•••@g•••.com.json',
+    },
+    {
+      provider: 'xai',
+      name: 'xai-caro@gmail.com.json',
+      email: 'ícaro@gmail.com',
+      masked: 'xai-c•••@g•••.com.json',
+    },
+    {
+      provider: 'xai',
+      name: 'xai-sa@t3.gg.json',
+      email: 'İsa@t3.gg',
+      masked: 'xai-s•••@t•••.gg.json',
+    },
     // meta-<email with runes outside [A-Za-z0-9._-] as "_", 120 max>-<sha256[:8] hex>.json
     {
       provider: 'meta',
@@ -210,12 +229,12 @@ describe('maskIdentity: backend credential filenames', () => {
     expect(maskIdentity(masked)).toBe(masked);
   });
 
-  test('without the email, prefixes and identity hashes stay readable', () => {
+  test('without the email, prefixes stay readable and identity hashes are masked', () => {
     expect(maskIdentity('claude-3f2a9c1d-theo@t3.gg.json', null, 'claude')).toBe(
-      'claude-3f2a9c1d-t•••@t•••.gg.json'
+      'claude-3•••@t•••.gg.json'
     );
     expect(maskIdentity('codex-1a2b3c4d-john-smith@acme.com-team.json')).toBe(
-      'codex-1a2b3c4d-j•••@a•••.com-team.json'
+      'codex-1•••@a•••.com-team.json'
     );
     expect(maskIdentity('xai-mary-jane@example.org.json')).toBe('xai-m•••@e•••.org.json');
     expect(maskIdentity('meta-theo_t3.gg-191b52b8bb642103.json')).toBe(
@@ -224,6 +243,15 @@ describe('maskIdentity: backend credential filenames', () => {
     expect(maskIdentity('meta-jane.doe_work_acme.com-632e12eae30b7002.json')).toBe(
       'meta-j•••_a•••.com-632e12eae30b7002.json'
     );
+  });
+
+  test('without the email, a mailbox that starts like an identity hash is masked whole', () => {
+    // Older Claude and Codex names put the mailbox right after the prefix.
+    expect(maskIdentity('codex-20231015-backup@gmail.com-team.json', null, 'codex')).toBe(
+      'codex-2•••@g•••.com-team.json'
+    );
+    expect(maskIdentity('claude-deadbeef-x@acme.com.json')).toBe('claude-d•••@a•••.com.json');
+    expect(maskIdentity('claude-DEADBEEF-x@acme.com.json')).toBe('claude-D•••@a•••.com.json');
   });
 
   test('names the backend writes without an email pass through unchanged', () => {
@@ -290,6 +318,26 @@ describe('maskIdentity: fallback pattern', () => {
     expect(maskIdentity('claude-a.b+c@t3.gg.json', 'a.b+c@t3.gg')).toBe('claude-a•••@t•••.gg.json');
     expect(maskIdentity('claude-axb+c@t3.gg.json', 'a.b+c@t3.gg', 'claude')).toBe(
       'claude-a•••@t•••.gg.json'
+    );
+  });
+
+  test('a stale email that is a suffix of the address masks the whole address', () => {
+    expect(maskIdentity('claude-ann.theo@t3.gg.json', 'theo@t3.gg')).toBe(
+      'claude-a•••@t•••.gg.json'
+    );
+    expect(maskIdentity('devin.json · bob.smith@acme.com', 'h@acme.com')).toBe(
+      'devin.json · b•••@a•••.com'
+    );
+    expect(maskIdentity("claude-o'theo@t3.gg.json", 'theo@t3.gg')).toBe('claude-o•••@t•••.gg.json');
+    expect(maskIdentity('meta-ann.theo_t3.gg-191b52b8bb642103.json', 'theo@t3.gg')).toBe(
+      'meta-a•••_t•••.gg-191b52b8bb642103.json'
+    );
+  });
+
+  test('known gap: a stale suffix after a hyphen is replaced where it starts', () => {
+    // Documented on maskIdentity: the backend separates its prefix with the same "-".
+    expect(maskIdentity('claude-ann-theo@t3.gg.json', 'theo@t3.gg')).toBe(
+      'claude-ann-t•••@t•••.gg.json'
     );
   });
 });

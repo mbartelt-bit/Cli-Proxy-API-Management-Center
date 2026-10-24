@@ -1601,7 +1601,7 @@
     "ledger_distribution_part_one": "{{count}} credential: {{range}}",
     "ledger_distribution_part_other": "{{count}} credential: {{range}}",
     "ledger_tier_high": "còn từ {{min}}% trở lên",
-    "ledger_tier_medium": "còn {{min}}–{{max}}%",
+    "ledger_tier_medium": "còn từ {{min}}% đến dưới {{max}}%",
     "ledger_tier_low": "còn dưới {{max}}%",
     "ledger_show_more": "Hiện",
     "ledger_show_less": "Ẩn",

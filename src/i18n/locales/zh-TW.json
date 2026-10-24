@@ -1670,7 +1670,7 @@
     "ledger_segments_label": "{{window}} 各憑證剩餘：{{values}}",
     "ledger_distribution_part": "{{count}} 個憑證：{{range}}",
     "ledger_tier_high": "剩餘 {{min}}% 以上",
-    "ledger_tier_medium": "剩餘 {{min}}–{{max}}%",
+    "ledger_tier_medium": "剩餘 {{min}}% 至不足 {{max}}%",
     "ledger_tier_low": "剩餘不足 {{max}}%",
     "ledger_show_more": "展開",
     "ledger_show_less": "收合",

@@ -1645,7 +1645,7 @@
     "ledger_distribution_part_one": "자격 증명 {{count}}개: {{range}}",
     "ledger_distribution_part_other": "자격 증명 {{count}}개: {{range}}",
     "ledger_tier_high": "{{min}}% 이상 남음",
-    "ledger_tier_medium": "{{min}}–{{max}}% 남음",
+    "ledger_tier_medium": "{{min}}% 이상 {{max}}% 미만 남음",
     "ledger_tier_low": "{{max}}% 미만 남음",
     "ledger_show_more": "표시",
     "ledger_show_less": "숨기기",

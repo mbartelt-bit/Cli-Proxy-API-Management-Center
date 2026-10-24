@@ -1642,7 +1642,7 @@
     "ledger_segments_label": "{{window}} 各凭证剩余：{{values}}",
     "ledger_distribution_part": "{{count}} 个凭证：{{range}}",
     "ledger_tier_high": "剩余 {{min}}% 及以上",
-    "ledger_tier_medium": "剩余 {{min}}–{{max}}%",
+    "ledger_tier_medium": "剩余 {{min}}% 至不足 {{max}}%",
     "ledger_tier_low": "剩余不足 {{max}}%",
     "ledger_show_more": "展开",
     "ledger_show_less": "收起",

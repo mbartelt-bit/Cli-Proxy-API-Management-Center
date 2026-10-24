@@ -163,6 +163,8 @@ export function QuotaLedgerSummaryCell({
           .join(', '),
       })
     : null;
+  // Tiers come from the unrounded value, as in every QuotaMeter, so the ranges
+  // are half-open: 69.6 (shown as 70%) is "30% to under 70%", not "30–69%".
   const tierRange = (tier: DistributionTier) => {
     switch (tier) {
       case 'high':
@@ -170,7 +172,7 @@ export function QuotaLedgerSummaryCell({
       case 'medium':
         return t('quota_management.ledger_tier_medium', {
           min: QUOTA_PROGRESS_MEDIUM_THRESHOLD,
-          max: QUOTA_PROGRESS_HIGH_THRESHOLD - 1,
+          max: QUOTA_PROGRESS_HIGH_THRESHOLD,
         });
       case 'low':
         return t('quota_management.ledger_tier_low', { max: QUOTA_PROGRESS_MEDIUM_THRESHOLD });

@@ -226,23 +226,31 @@ describe('ledger summary cell', () => {
 });
 
 describe('ledger summary segments for large pools', () => {
-  const pool = (count: number) =>
+  const poolOf = (remaining: readonly (number | null)[]) =>
     buildLedgerProviderModel(
       'codex',
-      Array.from({ length: count }, (_, index) => ({
+      remaining.map((value, index) => ({
         id: `codex-${index}`,
         windows: [
           {
             key: 'weekly',
             label: 'Weekly',
-            // 0, 1, …: a spread across every tier, with every seventh unreported.
-            remaining: index % 7 === 6 ? null : (index * 13) % 101,
+            remaining: value,
             resetAtMs: NOW + DAY_MS,
             periodHours: 168,
           },
         ],
       })),
       NOW
+    );
+  // 0, 13, 26, …: a spread across every tier, with every seventh unreported.
+  const pool = (count: number) =>
+    poolOf(
+      Array.from({ length: count }, (_, index) => (index % 7 === 6 ? null : (index * 13) % 101))
+    );
+  const shareTitles = (markup: string) =>
+    [...markup.matchAll(/<span (?:data-tier="\w+" )?style="flex-grow:\d+" title="([^"]+)"/g)].map(
+      ([, title]) => title
     );
 
   test(`up to ${SEGMENT_LIMIT} credentials keep one segment each`, () => {
@@ -276,7 +284,7 @@ describe('ledger summary segments for large pools', () => {
     });
     expect(counts).toEqual([expected.high, expected.medium, expected.low, expected.unknown]);
     expect(parts[0][3]).toBe(`${expected.high} credentials: 70% or more left`);
-    expect(parts[1][3]).toBe(`${expected.medium} credentials: 30–69% left`);
+    expect(parts[1][3]).toBe(`${expected.medium} credentials: 30% to under 70% left`);
     expect(parts[2][3]).toBe(`${expected.low} credentials: under 30% left`);
     expect(parts[3][3]).toBe(`${expected.unknown} credentials: not reported`);
 
@@ -284,6 +292,34 @@ describe('ledger summary segments for large pools', () => {
     const label = markup.match(/role="img" aria-label="([^"]+)"/)?.[1] ?? '';
     expect(label.startsWith('Weekly remaining per credential: 0%, 13%, 26%')).toBe(true);
     expect(label.split(', ')).toHaveLength(count);
+  });
+
+  test('tier titles give the half-open range a fractional value is tiered by', async () => {
+    // 69.6 reads as 70% and 29.6 as 30%, yet each tiers below its threshold,
+    // like its own row meter; the ranges must still contain them.
+    const model = poolOf([69.6, 29.6, ...Array.from({ length: 40 }, () => 100)]);
+    const markup = renderCell(model);
+    const label = markup.match(/role="img" aria-label="([^"]+)"/)?.[1] ?? '';
+    expect(label.startsWith('Weekly remaining per credential: 70%, 30%, 100%')).toBe(true);
+    expect(shareTitles(markup)).toEqual([
+      '40 credentials: 70% or more left',
+      '1 credential: 30% to under 70% left',
+      '1 credential: under 30% left',
+    ]);
+
+    // Every locale reads the medium tier up to, not through, the high threshold.
+    try {
+      for (const language of ['en', 'zh-CN', 'zh-TW', 'ru', 'vi', 'ko']) {
+        await i18n.changeLanguage(language);
+        const medium = shareTitles(renderCell(model))[1];
+        expect(medium).toContain('30%');
+        expect(medium).toContain('70%');
+        expect(medium).not.toContain('69');
+        expect(medium).not.toMatch(/30\s*[–-]\s*70/);
+      }
+    } finally {
+      await i18n.changeLanguage('en');
+    }
   });
 
   test('the segment bar can never paint past its cell', () => {

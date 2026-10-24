@@ -1645,7 +1645,7 @@
     "ledger_distribution_part_one": "{{count}} credential: {{range}}",
     "ledger_distribution_part_other": "{{count}} credentials: {{range}}",
     "ledger_tier_high": "{{min}}% or more left",
-    "ledger_tier_medium": "{{min}}–{{max}}% left",
+    "ledger_tier_medium": "{{min}}% to under {{max}}% left",
     "ledger_tier_low": "under {{max}}% left",
     "ledger_show_more": "Show",
     "ledger_show_less": "Hide",

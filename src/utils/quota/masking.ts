@@ -5,8 +5,9 @@
  * so the quota page masks them by default. Masking keeps just enough shape to
  * tell credentials apart at a glance — the first character of the mailbox and
  * of the domain, plus the full suffix — without putting the address on screen.
- * The provider prefix and identity hashes the backend writes around the email
- * stay readable.
+ * The provider prefix the backend writes in front of the email stays readable,
+ * and so does an identity hash when the account email is known. Without it, a
+ * hash cannot be told apart from the start of a mailbox, so it is masked too.
  *
  * Pure string helpers: search and every request keep using the raw values.
  */
@@ -129,17 +130,30 @@ const knownEmailSpellings = (email: string): EmailSpelling[] => {
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
+ * Characters a mailbox may start with, Unicode-aware: letters, digits, marks
+ * and symbols in any script plus RFC 5322 atext. Past its first character a
+ * mailbox may also contain `.` and `-`.
+ */
+const MAILBOX_LEAD = "\\p{L}\\p{N}\\p{M}\\p{So}!#$%&'*+/=?^_`{|}~";
+
+/**
  * Replace every case-insensitive occurrence of any spelling in one pass over
  * the original string. Matching with a RegExp rather than indexing into a
  * lower-cased copy keeps offsets right when lower-casing changes length
  * (`İ` lower-cases to two code units).
+ *
+ * A spelling only matches at the start of a token: never right after a
+ * mailbox character or `.`, so only at the start of the name or after a
+ * space, a `-` or other punctuation. Otherwise a spelling could start inside
+ * the text before it: the NFD xAI spelling of `Ícaro@…` (`I-caro@…`) would
+ * eat the `i-` of `xai-`, and a stale `theo@…` would leave the `ann.` of
+ * `ann.theo@…` readable.
  */
 const replaceSpellings = (haystack: string, spellings: readonly EmailSpelling[]): string => {
   if (spellings.length === 0) return haystack;
-  const pattern = new RegExp(
-    spellings.map((spelling) => `(${escapeRegExp(spelling.text)})`).join('|'),
-    'giu'
-  );
+  const alternation = spellings.map((spelling) => `(${escapeRegExp(spelling.text)})`).join('|');
+  // Non-capturing wrapper, so group i + 1 is still spellings[i].
+  const pattern = new RegExp(`(?<![${MAILBOX_LEAD}.])(?:${alternation})`, 'giu');
   return haystack.replace(pattern, (...args: unknown[]) => {
     const index = args.slice(1, 1 + spellings.length).findIndex((group) => group !== undefined);
     return spellings[index]?.mask ?? MASK;
@@ -183,16 +197,18 @@ const CREDENTIAL_FILE_PREFIXES = [
   'xai',
 ];
 
-/** Claude and Codex put an 8-hex identity hash between prefix and email. */
-const HASHED_FILE_PREFIXES = new Set(['claude', 'codex']);
-const IDENTITY_HASH = /^[0-9a-f]{8}-/i;
-
 const PROVIDER_TOKEN = /^[a-z0-9][a-z0-9._-]*$/;
 
 /**
- * The readable head of a credential name: the provider prefix (the
- * credential's own type first, then the backend's known prefixes) and, for
- * Claude and Codex, the identity hash after it. Empty when none leads.
+ * The readable head of a credential name: the provider prefix, trying the
+ * credential's own type first, then the backend's known prefixes. Empty when
+ * none leads.
+ *
+ * The 8-hex identity hash Claude and Codex may write after the prefix is not
+ * kept here. Their older names put the mailbox right after the prefix, so
+ * without the email `claude-deadbeef-x@…` could be a hash or a mailbox. It is
+ * masked with the mailbox; with the email known, only the email is replaced
+ * and the hash stays readable.
  */
 const readablePrefix = (name: string, provider?: string | null): string => {
   const hint = typeof provider === 'string' ? provider.trim().toLowerCase() : '';
@@ -202,24 +218,19 @@ const readablePrefix = (name: string, provider?: string | null): string => {
   for (const candidate of candidates) {
     const token = `${candidate}-`;
     // Compare a slice of the original so offsets never come from a case-mapped copy.
-    if (name.slice(0, token.length).toLowerCase() !== token) continue;
-    const hash = HASHED_FILE_PREFIXES.has(candidate)
-      ? (IDENTITY_HASH.exec(name.slice(token.length))?.[0] ?? '')
-      : '';
-    return name.slice(0, token.length + hash.length);
+    if (name.slice(0, token.length).toLowerCase() === token) return name.slice(0, token.length);
   }
   return '';
 };
 
 /**
- * Email-shaped substring, Unicode-aware. The mailbox takes letters, digits,
- * marks and symbols in any script plus RFC 5322 atext (`-` and `.` too, but
- * not as its first character), so a hyphenated or accented mailbox is masked
- * whole; the domain swallows any trailing dotted suffix (`.json`,
- * `.com-team.json`), which the mask keeps verbatim anyway. Provider prefixes
- * are protected by `readablePrefix`, not by the pattern stopping at a `-`.
+ * Email-shaped substring, Unicode-aware. The mailbox takes `MAILBOX_LEAD`
+ * characters (`-` and `.` too, but not as its first character), so a
+ * hyphenated or accented mailbox is masked whole; the domain swallows any
+ * trailing dotted suffix (`.json`, `.com-team.json`), which the mask keeps
+ * verbatim anyway. Provider prefixes are protected by `readablePrefix`, not
+ * by the pattern stopping at a `-`.
  */
-const MAILBOX_LEAD = "\\p{L}\\p{N}\\p{M}\\p{So}!#$%&'*+/=?^_`{|}~";
 const DOMAIN_LABEL = '[\\p{L}\\p{N}\\p{M}-]+';
 const EMAIL_PATTERN = new RegExp(
   `[${MAILBOX_LEAD}][${MAILBOX_LEAD}.-]*@${DOMAIN_LABEL}(?:\\.${DOMAIN_LABEL})+`,
@@ -229,13 +240,20 @@ const EMAIL_PATTERN = new RegExp(
 /**
  * Mask the identity a credential is displayed under.
  *
- * A known account email is replaced wherever it occurs in `name` — verbatim
- * or in the sanitized spelling Meta and xAI filenames use, case-insensitively
- * and after Unicode NFC normalization — leaving the provider prefix and any
- * identity hash readable. Then, so an unknown or mismatched `email` still
- * never leaks an address, a Meta-shaped name has its account part masked and
- * any remaining email-shaped substring is masked by pattern; `provider` (the
- * credential's type) keeps its prefix readable in front of it.
+ * A known account email is replaced wherever it starts a token in `name` —
+ * verbatim or in the sanitized spelling Meta and xAI filenames use,
+ * case-insensitively and after Unicode NFC normalization — leaving the
+ * provider prefix and any identity hash readable. Then, for an unknown or
+ * mismatched `email`, a Meta-shaped name has its account part masked and any
+ * remaining email-shaped substring is masked by pattern, identity hash
+ * included; `provider` (the credential's type) keeps its prefix readable in
+ * front of it.
+ *
+ * Known gap: a stale `email` that is a hyphen-separated suffix of the address
+ * in the name is still replaced where it starts, because the backend uses the
+ * same `-` after its prefix. The mailbox head before it stays readable:
+ * `theo@t3.gg` against `claude-ann-theo@t3.gg.json` gives
+ * `claude-ann-t•••@t•••.gg.json`.
  *
  * Masked output contains no match of its own, so masking is idempotent.
  * Names without an email pass through unchanged.

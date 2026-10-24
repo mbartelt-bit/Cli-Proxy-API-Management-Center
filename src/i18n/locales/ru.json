@@ -1652,7 +1652,7 @@
     "ledger_distribution_part_many": "Учётных данных: {{count}} ({{range}})",
     "ledger_distribution_part_other": "Учётных данных: {{count}} ({{range}})",
     "ledger_tier_high": "осталось {{min}}% и больше",
-    "ledger_tier_medium": "осталось {{min}}–{{max}}%",
+    "ledger_tier_medium": "осталось {{min}}% и больше, но меньше {{max}}%",
     "ledger_tier_low": "осталось меньше {{max}}%",
     "ledger_show_more": "Показать",
     "ledger_show_less": "Скрыть",
