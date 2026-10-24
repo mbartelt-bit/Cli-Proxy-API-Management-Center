@@ -24,6 +24,8 @@
 /* 提供商导航独占一行，保留原生横向滚动。 */
 
 .tabsRow {
+  --tabs-fade: 28px;
+
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -33,6 +35,39 @@
   > :first-child {
     flex: 1 1 auto;
     min-width: 0;
+  }
+
+  /* With the view select beside them the tabs can overflow. `data-fade`
+   * (useScrollEdges) names the side(s) still hiding tabs; only those fade,
+   * so a fully scrolled or fitting strip shows its last tab, underline and
+   * focus ring in full. (`#000` here is mask opacity, not a colour.) */
+  &[data-fade='end'] > :first-child {
+    mask-image: linear-gradient(to right, #000 calc(100% - var(--tabs-fade)), transparent);
+  }
+
+  &[data-fade='start'] > :first-child {
+    mask-image: linear-gradient(to left, #000 calc(100% - var(--tabs-fade)), transparent);
+  }
+
+  &[data-fade='both'] > :first-child {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--tabs-fade),
+      #000 calc(100% - var(--tabs-fade)),
+      transparent
+    );
+  }
+}
+
+/* 视图切换（台账 / 卡片）：紧凑下拉，固定宽度贴在 tabs 行右端。 */
+.viewSelect {
+  flex: 0 0 150px;
+  min-width: 0;
+
+  button[aria-haspopup='listbox'] {
+    height: 30px;
+    border-radius: 8px;
   }
 }
 
@@ -169,6 +204,14 @@
 
   .sort button[aria-haspopup='listbox'] {
     height: 40px;
+  }
+
+  .viewSelect {
+    flex-basis: 116px;
+
+    button[aria-haspopup='listbox'] {
+      height: 36px;
+    }
   }
 }
 

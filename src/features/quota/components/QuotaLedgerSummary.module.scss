@@ -1,0 +1,327 @@
+@use '../../../styles/mixins' as *;
+
+/* ============================================================
+ * Provider summary panel: one bordered panel, cells split by hairlines.
+ * Each cell draws its own left divider (inset shadow) and a top divider
+ * that runs on to the panel's right edge; the grid is pulled up/left by
+ * 1px so the outer edge's lines fall under the panel border. Any wrap gets
+ * full-width row dividers and no lines through empty tracks.
+ * ============================================================ */
+
+.panel {
+  border: 1px solid var(--border-color);
+  border-radius: $radius-lg;
+  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+  overflow: hidden;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  margin: -1px 0 0 -1px;
+  padding: 0;
+  list-style: none;
+}
+
+.cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 14px 18px 12px;
+  box-shadow: inset 1px 0 0 var(--border-color);
+
+  /* Row divider, clipped at the panel edge by its overflow. */
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 1px;
+    background: var(--border-color);
+    pointer-events: none;
+  }
+}
+
+/* ---------- head: icon + provider + count ---------- */
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.iconWrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
+
+.icon {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+  display: block;
+}
+
+.iconFallback {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.name {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-primary);
+  @include text-ellipsis;
+}
+
+.count {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ledger-quiet, var(--text-tertiary));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- headline window ---------- */
+
+.windowLabel {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  @include text-ellipsis;
+}
+
+.aggregate {
+  margin: 1px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.total {
+  font-size: 26px;
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.capacity {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- segmented bar: one segment per credential ----------
+ * Segments may shrink to nothing and the bar clips, so it can never paint
+ * into the neighbouring cell; past SEGMENT_LIMIT credentials the component
+ * switches to the tier distribution below instead. */
+
+.segments {
+  --segment-gap: 6px;
+
+  display: flex;
+  gap: var(--segment-gap);
+  margin: 10px 0 0;
+  min-width: 0;
+  overflow: hidden;
+
+  &[data-density='compact'] {
+    --segment-gap: 3px;
+  }
+
+  &[data-density='dense'] {
+    --segment-gap: 1px;
+  }
+
+  &[data-mode='distribution'] {
+    --segment-gap: 2px;
+  }
+}
+
+.segment {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 4px;
+  border-radius: $radius-full;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  overflow: hidden;
+}
+
+.segmentFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transform-origin: left center;
+  transition: width 360ms var(--ease-out-strong, ease-out);
+  animation: ledger-segment-fill 480ms var(--ease-out-strong, ease-out) both;
+
+  &[data-tier='high'] {
+    background: var(--viz-success);
+  }
+
+  &[data-tier='medium'] {
+    background: var(--quota-medium-color);
+  }
+
+  &[data-tier='low'] {
+    background: var(--viz-failure);
+  }
+}
+
+@keyframes ledger-segment-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Tier distribution: one stacked meter, each tier as wide as its share of
+ * the credentials (flex-grow = count), healthiest first. Not reported reads
+ * as bare track. */
+.share {
+  flex: 0 1 0;
+  min-width: 0;
+  height: 4px;
+  border-radius: $radius-full;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  transform-origin: left center;
+  animation: ledger-segment-fill 480ms var(--ease-out-strong, ease-out) both;
+
+  &[data-tier='high'] {
+    background: var(--viz-success);
+  }
+
+  &[data-tier='medium'] {
+    background: var(--quota-medium-color);
+  }
+
+  &[data-tier='low'] {
+    background: var(--viz-failure);
+  }
+}
+
+/* ---------- soonest reset ---------- */
+
+.reset {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  @include text-ellipsis;
+}
+
+.resetRelative {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.resetAbsolute,
+.resetNone {
+  color: var(--ledger-quiet, var(--text-tertiary));
+}
+
+/* ---------- footer: next most constrained window ---------- */
+
+/* Sits right under the reset line (not pushed to the cell bottom), so the
+ * dividers of neighbouring cells stay level when one cell expands. */
+.footer {
+  padding-top: 12px;
+
+  /* Hairline above the footer, inset from the cell edges. */
+  > :first-child {
+    padding-top: 10px;
+    border-top: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+  }
+}
+
+.otherRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.otherLabel {
+  min-width: 0;
+  color: var(--text-tertiary);
+  @include text-ellipsis;
+}
+
+.otherValue {
+  flex-shrink: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.otherMore {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.toggle {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px 4px;
+  margin-right: -4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ledger-action, var(--text-secondary));
+  cursor: pointer;
+  transition:
+    color var(--dur-hover, 200ms) var(--ease-out-strong, ease-out),
+    background-color var(--dur-hover, 200ms) var(--ease-out-strong, ease-out);
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .toggle:hover {
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--bg-tertiary) 55%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segmentFill {
+    transition: none;
+    animation: none;
+  }
+
+  .share {
+    animation: none;
+  }
+
+  .toggle {
+    transition: none;
+  }
+}

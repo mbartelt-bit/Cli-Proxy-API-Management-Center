@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { IconRefreshCw } from '@/components/ui/icons';
 import type { ClaudeQuotaState, ResolvedTheme } from '@/types';
 import { resolveQuotaErrorMessage } from '@/utils/quota';
-import { getQuotaDisplayName } from '@/utils/quota/identity';
+import { formatQuotaIdentity } from '@/utils/quota/identity';
 import {
   getAuthFileIcon,
   getThemeSurfaceIconBackground,
@@ -31,6 +31,8 @@ export type QuotaCardProps = {
   entry: QuotaFileEntry;
   quota?: QuotaCardState;
   resolvedTheme: ResolvedTheme;
+  /** Show the credential's email unmasked (the page masks by default). */
+  showEmails: boolean;
   canRefresh: boolean;
   resetting: boolean;
   /** Initial cascade delay; null disables entrance motion for later mounts. */
@@ -44,6 +46,7 @@ export function QuotaCard(props: QuotaCardProps) {
     entry,
     quota,
     resolvedTheme,
+    showEmails,
     canRefresh,
     resetting,
     entranceDelayMs,
@@ -55,7 +58,7 @@ export function QuotaCard(props: QuotaCardProps) {
   const file = entry.file;
   const retainedClaudeUsage =
     entry.type === 'claude' && hasClaudeUsageData(quota as ClaudeQuotaState | undefined);
-  const displayName = getQuotaDisplayName(file);
+  const displayName = formatQuotaIdentity(file, showEmails);
 
   // Capture the entrance delay only at mount, without a render-time ref read.
   const [mountEntranceDelayMs] = useState<number | null>(entranceDelayMs ?? null);
@@ -71,7 +74,8 @@ export function QuotaCard(props: QuotaCardProps) {
     entry.type === 'claude' && status !== 'idle',
     !canRefresh || loading || resetting,
     quota,
-    onRefresh
+    onRefresh,
+    displayName
   );
   const providerType =
     entry.type === 'plugin'

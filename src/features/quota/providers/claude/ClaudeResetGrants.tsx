@@ -19,13 +19,19 @@ import {
 import { selectResetGrant } from './selectResetGrant';
 import { readResetGrantsForCard, scheduleResetGrantRead } from './resetGrantReads';
 
-/** Card-owned reads; the session-scoped journal owns spending and ambiguous retries. */
+/**
+ * Card-owned reads; the session-scoped journal owns spending and ambiguous retries.
+ *
+ * `displayName` is what the confirmation names the credential as — the quota
+ * page passes its masked identity so a screen share never shows the address.
+ */
 export function useClaudeResetGrants(
   file: AuthFileItem,
   enabled: boolean,
   disabled: boolean,
   refreshToken: unknown,
-  onRefresh: () => void
+  onRefresh: () => void,
+  displayName: string = file.name
 ) {
   const { t } = useTranslation();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
@@ -89,7 +95,7 @@ export function useClaudeResetGrants(
     showConfirmation({
       title: t('claude_reset.title'),
       message: t(pending ? 'claude_reset.retry_confirm' : 'claude_reset.confirm_text', {
-        name: file.name,
+        name: displayName,
       }),
       confirmText: t(pending ? 'claude_reset.retry' : 'claude_reset.confirm'),
       variant: 'primary',

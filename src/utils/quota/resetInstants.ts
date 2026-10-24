@@ -14,6 +14,24 @@
 /** Milliseconds in an hour — window periods are expressed in hours throughout. */
 const HOUR_MS = 3_600_000;
 
+/** The largest |epoch ms| a JS `Date` can hold (±100,000,000 days around 1970). */
+export const MAX_DATE_MS = 8.64e15;
+
+/**
+ * `value` as an instant a `Date` can represent, or null.
+ *
+ * The parsers below accept any positive number, so a nanosecond epoch or a
+ * sentinel slips through as a "millisecond" value far outside the `Date`
+ * range — where `toISOString()` throws and every formatter prints NaN. Code
+ * that renders an instant gates it through here once instead of trusting
+ * `Number.isFinite`.
+ */
+export function toInstantMs(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= MAX_DATE_MS
+    ? value
+    : null;
+}
+
 /**
  * Parse an ISO-8601 timestamp to epoch ms.
  *

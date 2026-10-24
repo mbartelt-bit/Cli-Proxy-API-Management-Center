@@ -68,6 +68,35 @@ describe('quota ui state', () => {
     expect(readQuotaUiState()).toEqual({ tab: undefined, sortMode: undefined });
   });
 
+  test('round-trips the view mode and the email visibility', () => {
+    writeQuotaUiState({ viewMode: 'cards', showEmails: true });
+    expect(readQuotaUiState()).toEqual({ viewMode: 'cards', showEmails: true });
+
+    writeQuotaUiState({ showEmails: false });
+    expect(readQuotaUiState()).toEqual({ viewMode: 'cards', showEmails: false });
+  });
+
+  test('view and email preferences merge with tab and sort', () => {
+    writeQuotaUiState({ tab: 'claude', sortMode: 'soonest' });
+    writeQuotaUiState({ viewMode: 'ledger' });
+    writeQuotaUiState({ showEmails: true });
+
+    expect(readQuotaUiState()).toEqual({
+      tab: 'claude',
+      sortMode: 'soonest',
+      viewMode: 'ledger',
+      showEmails: true,
+    });
+  });
+
+  test('rejects an unknown view mode and a non-boolean email flag', () => {
+    storage.setItem(KEY, JSON.stringify({ viewMode: 'table', showEmails: 'yes' }));
+    const state = readQuotaUiState();
+    expect(state?.viewMode).toBeUndefined();
+    // Anything but an explicit boolean leaves emails masked.
+    expect(state?.showEmails).toBeUndefined();
+  });
+
   test('survives absent, malformed, and non-object payloads', () => {
     expect(readQuotaUiState()).toBeNull();
 

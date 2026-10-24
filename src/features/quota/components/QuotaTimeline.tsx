@@ -52,7 +52,11 @@ export interface QuotaTimelineProps {
    * off the entry, and lanes see exactly what the cards see.
    */
   quotaFor: (entry: QuotaFileEntry) => QuotaCardState | undefined;
-  displayNameFor: (name: string) => string;
+  /**
+   * Lane label for a credential's display name. The page masks identities
+   * here; `email` is the credential's known address, when there is one.
+   */
+  displayNameFor: (name: string, email?: string) => string;
   resolvedTheme: ResolvedTheme;
   /** Injectable for tests/screenshots; defaults to the real clock. */
   now?: number;
@@ -93,10 +97,10 @@ export function QuotaTimeline({
     () =>
       entries.map((entry) => ({
         name: getQuotaCacheKey(entry.file),
-        displayName:
-          entry.type === 'devin'
-            ? getQuotaDisplayName(entry.file)
-            : displayNameFor(entry.file.name),
+        displayName: displayNameFor(
+          entry.type === 'devin' ? getQuotaDisplayName(entry.file) : entry.file.name,
+          entry.file.email
+        ),
         provider: entry.type,
         quota: quotaFor(entry),
       })),

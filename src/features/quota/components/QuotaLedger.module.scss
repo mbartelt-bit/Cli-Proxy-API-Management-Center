@@ -1,0 +1,145 @@
+@use '../../../styles/mixins' as *;
+
+/* ============================================================
+ * Ledger shell: summary panel, then provider groups. Each group's
+ * list owns its column template; rows are subgrids of it. When the
+ * groups get too narrow for one line per credential (see
+ * `quota-ledger-groups` below), rows go two-tier instead.
+ * ============================================================ */
+
+.ledger {
+  /* Quietest text tier, for non-interactive metadata only (counts,
+   * absolute times). Dark steps down to quaternary as in the reference;
+   * the light themes' tertiary is already as quiet as text should get. */
+  --ledger-quiet: var(--text-tertiary);
+  /* Resting colour of the quiet text actions (row actions, Show/Hide):
+   * at least 4.5:1 on the page and panel in every theme — secondary in
+   * the light themes (5.3:1), tertiary in dark (6.2:1). */
+  --ledger-action: var(--text-secondary);
+
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  min-width: 0;
+
+  [data-theme='dark'] & {
+    --ledger-quiet: var(--text-quaternary);
+    --ledger-action: var(--text-tertiary);
+  }
+}
+
+.groups {
+  container: quota-ledger-groups / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+/* Widths every group shares, so column N starts at the same x in each
+ * group whatever its own number of windows (cqi = the groups container).
+ * Declared below the container so the units resolve against it. */
+.group {
+  --ledger-gap: 24px;
+  --ledger-identity: clamp(184px, 23cqi, 300px);
+  --ledger-window: clamp(140px, 15.2cqi, 184px);
+  /* Narrowest the actions track may get beside the windows. */
+  --ledger-actions-min: 150px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.groupTitle {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.groupCount {
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ledger-quiet, var(--text-tertiary));
+}
+
+/* identity | windows | actions. The windows track holds this group's own
+ * `--ledger-columns` cells of the shared width on one line when it can
+ * (never squeezing the actions below their minimum); otherwise its cells
+ * wrap onto a second line, still on the shared column positions. Spare
+ * width goes to the windows track, so the actions sit right-aligned and
+ * the windows stop where their last column ends, as in a ledger. */
+.rows {
+  --ledger-windows-need: calc(
+    var(--ledger-columns, 1) * var(--ledger-window) + (var(--ledger-columns, 1) - 1) *
+      var(--ledger-gap)
+  );
+  --ledger-windows-room: calc(
+    100% - var(--ledger-identity) - 2 * var(--ledger-gap) - var(--ledger-actions-min)
+  );
+
+  display: grid;
+  grid-template-columns:
+    var(--ledger-identity)
+    minmax(min(var(--ledger-windows-need), var(--ledger-windows-room)), 1fr)
+    auto;
+  column-gap: var(--ledger-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skeletonRows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Too narrow for identity, three windows and actions on one line: each
+ * row lays itself out in two tiers (QuotaLedgerRow.module.scss), windows
+ * on their own line at the shared width. Every group switches at the same
+ * width, so columns still line up from group to group. Phones keep their
+ * own stacked layout below. */
+@media (min-width: #{$breakpoint-mobile + 1}) {
+  @container quota-ledger-groups (max-width: 879px) {
+    /* The windows have the line to themselves: wider cells, fewer cut labels. */
+    .group {
+      --ledger-window: clamp(150px, 19cqi, 184px);
+    }
+
+    .rows {
+      display: block;
+    }
+  }
+}
+
+@include mobile {
+  .ledger {
+    gap: 20px;
+  }
+
+  /* Rows lay themselves out (see QuotaLedgerRow.module.scss). */
+  .rows {
+    display: block;
+  }
+}

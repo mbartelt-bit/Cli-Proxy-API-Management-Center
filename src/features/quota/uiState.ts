@@ -1,26 +1,39 @@
 import {
   QUOTA_SORT_MODES,
   QUOTA_TAB_ORDER,
+  QUOTA_VIEW_MODES,
   type QuotaSortMode,
   type QuotaTabId,
+  type QuotaViewMode,
 } from './constants';
 
-/** 额度页 UI 偏好：会话级持久化（sessionStorage），跨会话不携带。 */
+/**
+ * 额度页 UI 偏好：会话级持久化（sessionStorage），跨会话不携带。
+ *
+ * Session scope matters most for `showEmails`: a new session always starts
+ * masked, so a screen share never opens on addresses revealed yesterday.
+ */
 export type QuotaUiState = {
   tab?: QuotaTabId;
   sortMode?: QuotaSortMode;
+  viewMode?: QuotaViewMode;
+  showEmails?: boolean;
 };
 
 const QUOTA_UI_STATE_KEY = 'quotaPage.uiState';
 
 const QUOTA_TAB_ID_SET = new Set<string>(['all', ...QUOTA_TAB_ORDER]);
 const QUOTA_SORT_MODE_SET = new Set<string>(QUOTA_SORT_MODES);
+const QUOTA_VIEW_MODE_SET = new Set<string>(QUOTA_VIEW_MODES);
 
 export const isQuotaTabId = (value: unknown): value is QuotaTabId =>
   typeof value === 'string' && QUOTA_TAB_ID_SET.has(value);
 
 export const isQuotaSortMode = (value: unknown): value is QuotaSortMode =>
   typeof value === 'string' && QUOTA_SORT_MODE_SET.has(value);
+
+export const isQuotaViewMode = (value: unknown): value is QuotaViewMode =>
+  typeof value === 'string' && QUOTA_VIEW_MODE_SET.has(value);
 
 export const readQuotaUiState = (): QuotaUiState | null => {
   if (typeof window === 'undefined') return null;
@@ -32,6 +45,9 @@ export const readQuotaUiState = (): QuotaUiState | null => {
     return {
       tab: isQuotaTabId(parsed.tab) ? parsed.tab : undefined,
       sortMode: isQuotaSortMode(parsed.sortMode) ? parsed.sortMode : undefined,
+      viewMode: isQuotaViewMode(parsed.viewMode) ? parsed.viewMode : undefined,
+      // Only an explicit `true` reveals emails; anything else stays masked.
+      showEmails: typeof parsed.showEmails === 'boolean' ? parsed.showEmails : undefined,
     };
   } catch {
     return null;
