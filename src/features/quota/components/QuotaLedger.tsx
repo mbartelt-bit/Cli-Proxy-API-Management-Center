@@ -90,6 +90,13 @@ export function QuotaLedger({
       .map((model) => ({ model, entries: byProvider.get(model.provider) ?? [] }));
   }, [models, pageEntries]);
 
+  // One track count for the whole page: every group shares the widest
+  // group's template, so window columns line up from group to group.
+  const trackCount = groups.reduce(
+    (widest, { model }) => Math.max(widest, model.columns.length),
+    1
+  );
+
   return (
     <div className={styles.ledger} ref={revealRef}>
       <QuotaLedgerSummary models={models} resolvedTheme={resolvedTheme} now={now} />
@@ -100,6 +107,7 @@ export function QuotaLedger({
             key={model.provider}
             model={model}
             entries={entries}
+            trackCount={trackCount}
             quotaFor={quotaFor}
             showEmails={showEmails}
             canUseActions={canUseActions}
@@ -117,6 +125,8 @@ export function QuotaLedger({
 interface QuotaLedgerGroupProps {
   model: LedgerProviderModel;
   entries: readonly QuotaFileEntry[];
+  /** Window tracks in the shared page template (≥ this group's columns). */
+  trackCount: number;
   quotaFor: (entry: QuotaFileEntry) => QuotaCardState | undefined;
   showEmails: boolean;
   canUseActions: boolean;
@@ -129,6 +139,7 @@ interface QuotaLedgerGroupProps {
 function QuotaLedgerGroup({
   model,
   entries,
+  trackCount,
   quotaFor,
   showEmails,
   canUseActions,
@@ -139,9 +150,7 @@ function QuotaLedgerGroup({
 }: QuotaLedgerGroupProps) {
   const { t } = useTranslation();
   const headingId = useId();
-  const columnStyle = {
-    '--ledger-columns': Math.max(1, model.columns.length),
-  } as CSSProperties;
+  const columnStyle = { '--ledger-columns': trackCount } as CSSProperties;
 
   return (
     <section className={styles.group} aria-labelledby={headingId} data-reveal>

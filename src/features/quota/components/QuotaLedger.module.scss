@@ -2,17 +2,29 @@
 
 /* ============================================================
  * Ledger shell: summary panel, then provider groups. Each group's
- * list owns the column template; rows are subgrids of it.
+ * list owns the column template; rows are subgrids of it. When the
+ * groups get too narrow for one line per credential (see
+ * `quota-ledger-groups` below), rows go two-tier instead.
  * ============================================================ */
 
 .ledger {
+  /* Quietest text tier (counts, absolute times, row actions). Dark steps
+   * down to quaternary as in the reference; the light themes' tertiary is
+   * already as quiet as legible text should get. */
+  --ledger-quiet: var(--text-tertiary);
+
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 30px;
   min-width: 0;
+
+  [data-theme='dark'] & {
+    --ledger-quiet: var(--text-quaternary);
+  }
 }
 
 .groups {
+  container: quota-ledger-groups / inline-size;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -41,18 +53,20 @@
   font-size: 12px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: var(--text-tertiary);
+  color: var(--ledger-quiet, var(--text-tertiary));
 }
 
 /* identity 1.5fr | one 1fr track per window column | actions.
- * The actions track also flexes so the windows stop short of the
- * right edge and the actions sit right-aligned, as in a ledger. */
+ * `--ledger-columns` is the widest group on the page, so every group
+ * shares one template and window columns line up across groups. The
+ * actions track also flexes so the windows stop short of the right edge
+ * and the actions sit right-aligned, as in a ledger. */
 .rows {
   display: grid;
   grid-template-columns:
     minmax(0, 1.5fr) repeat(var(--ledger-columns, 1), minmax(0, 1fr))
-    minmax(max-content, 1fr);
-  column-gap: 28px;
+    minmax(min-content, 1.4fr);
+  column-gap: 24px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -77,9 +91,14 @@
   gap: 10px;
 }
 
-@include tablet {
-  .rows {
-    column-gap: 18px;
+/* Too narrow for identity + windows + actions on one line: each row lays
+ * itself out in two tiers (QuotaLedgerRow.module.scss). Phones keep their
+ * own stacked layout below. */
+@media (min-width: #{$breakpoint-mobile + 1}) {
+  @container quota-ledger-groups (max-width: 919px) {
+    .rows {
+      display: block;
+    }
   }
 }
 

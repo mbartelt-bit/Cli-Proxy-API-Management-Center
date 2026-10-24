@@ -340,6 +340,42 @@ describe('ledger view', () => {
     expect(markup).toContain('claude-u•••@e•••.dev.json');
     expect(markup).not.toContain('user0@');
   });
+
+  test('every group shares the widest group track count so columns line up', () => {
+    const claude: QuotaFileEntry = {
+      type: 'claude',
+      file: { name: 'claude-a.json', type: 'claude' },
+    };
+    const codex: QuotaFileEntry = {
+      type: 'codex',
+      file: { name: 'codex-a.json', type: 'codex' },
+    };
+    const codexQuota = {
+      status: 'success',
+      windows: [{ id: 'weekly', label: 'Weekly', usedPercent: 40 }],
+    } as QuotaCardState;
+    const quotas = new Map<QuotaFileEntry, QuotaCardState>([
+      [claude, referenceQuotas[0]],
+      [codex, codexQuota],
+    ]);
+    const markup = renderToStaticMarkup(
+      createElement(QuotaLedger, {
+        scopeEntries: [claude, codex],
+        pageEntries: [claude, codex],
+        quotaFor: (entry) => quotas.get(entry),
+        resolvedTheme: 'light',
+        showEmails: false,
+        canUseActions: true,
+        resettingQuotaName: null,
+        onRefresh: () => undefined,
+        onReset: () => undefined,
+        now: NOW,
+      })
+    );
+
+    // Claude has three window columns, Codex one: both groups get three tracks.
+    expect(markup.match(/style="--ledger-columns:3"/g)).toHaveLength(2);
+  });
 });
 
 describe('quota header', () => {

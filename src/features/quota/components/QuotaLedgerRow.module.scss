@@ -12,7 +12,7 @@
   grid-column: 1 / -1;
   grid-template-columns: subgrid;
   align-items: center;
-  padding: 13px 0;
+  padding: 12px 0;
   min-width: 0;
 
   & + & {
@@ -26,8 +26,8 @@
   .row {
     grid-template-columns:
       minmax(0, 1.5fr) repeat(var(--ledger-columns, 1), minmax(0, 1fr))
-      minmax(max-content, 1fr);
-    column-gap: 28px;
+      minmax(min-content, 1.4fr);
+    column-gap: 24px;
   }
 }
 
@@ -81,7 +81,7 @@
 
 .cellLabel {
   min-width: 0;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-secondary);
   @include text-ellipsis;
 }
@@ -129,7 +129,7 @@
 
 .cellReset {
   min-width: 0;
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
   @include text-ellipsis;
@@ -137,38 +137,25 @@
 
 .resetRelative {
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
 }
 
 .resetAbsolute,
 .resetNone {
-  color: var(--text-tertiary);
+  color: var(--ledger-quiet, var(--text-tertiary));
 }
 
-/* Columns past the first two are context: quieter type, dimmer fill. */
+/* Columns past the first two are context: the whole cell (type, track and
+ * fill) steps back together, keeping its internal hierarchy. */
 .cell[data-emphasis='muted'] {
-  .cellLabel,
-  .cellPercent,
-  .resetRelative {
-    color: var(--text-tertiary);
-  }
-
-  .barFill {
-    opacity: 0.55;
-  }
-
-  .resetAbsolute,
-  .resetNone,
-  .placeholder {
-    color: var(--text-quaternary);
-  }
+  opacity: 0.7;
 }
 
 /* ---------- state cells ---------- */
 
 /* Error / no-windows: one message across every window column. */
 .cellWide {
-  grid-column: span var(--ledger-columns, 1);
+  grid-column: 2 / -2;
 }
 
 .cellNote {
@@ -202,7 +189,10 @@
 
 /* ---------- actions ---------- */
 
+/* Always the last track: groups with fewer windows than the page's widest
+ * group leave their spare window tracks empty, so columns line up page-wide. */
 .actions {
+  grid-column: -2 / -1;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -221,9 +211,9 @@
   border-radius: 8px;
   background: none;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.3;
-  color: var(--text-tertiary);
+  color: color-mix(in srgb, var(--text-tertiary) 50%, var(--ledger-quiet, var(--text-tertiary)));
   white-space: nowrap;
   cursor: pointer;
   transition:
@@ -275,7 +265,57 @@
   border: 0;
 }
 
-/* ---------- narrow: stack identity, windows, actions ---------- */
+/* ---------- two-tier: identity + actions, then the windows ---------- */
+
+/* Same container threshold as QuotaLedger.module.scss. Window cells keep
+ * the page-wide track width (1 / --ledger-columns of the line), so they
+ * still line up from row to row and group to group. */
+@media (min-width: #{$breakpoint-mobile + 1}) {
+  @container quota-ledger-groups (max-width: 919px) {
+    .row {
+      --ledger-gap: 20px;
+
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0 var(--ledger-gap);
+
+      /* Line break between the identity/actions tier and the windows
+       * (cells carry the vertical gap; a row gap would count this line). */
+      &::before {
+        content: '';
+        order: 1;
+        flex-basis: 100%;
+      }
+    }
+
+    .identity {
+      flex: 1 1 0;
+    }
+
+    .actions {
+      flex: 0 1 auto;
+    }
+
+    .cell {
+      order: 2;
+      margin-top: 10px;
+      flex: 0 0
+        calc((100% - (var(--ledger-columns, 1) - 1) * var(--ledger-gap)) / var(--ledger-columns, 1));
+    }
+
+    .cellWide {
+      flex-basis: 100%;
+    }
+
+    .cellNote,
+    .cellError {
+      min-height: 0;
+    }
+  }
+}
+
+/* ---------- phones: stack identity, windows, actions ---------- */
 
 @include mobile {
   .row {
