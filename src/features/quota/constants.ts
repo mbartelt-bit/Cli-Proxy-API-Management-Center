@@ -22,5 +22,19 @@ export const QUOTA_SORT_MODES = ['default', 'soonest'] as const;
 
 export type QuotaSortMode = (typeof QUOTA_SORT_MODES)[number];
 
+/** Page layout: the provider-grouped ledger (default) or the per-credential card grid. */
+export const QUOTA_VIEW_MODES = ['ledger', 'cards'] as const;
+
+export type QuotaViewMode = (typeof QUOTA_VIEW_MODES)[number];
+
+export const DEFAULT_QUOTA_VIEW_MODE: QuotaViewMode = 'ledger';
+
+/**
+ * Remaining-percent tiers shared by every quota meter: ≥70 healthy, ≥30
+ * watch, below that low. Kept React-free so pure models can classify too.
+ */
+export const QUOTA_PROGRESS_HIGH_THRESHOLD = 70;
+export const QUOTA_PROGRESS_MEDIUM_THRESHOLD = 30;
+
 /** 与 useRevealGroup 的 GROUP_MAX_TOTAL 一致：卡片级联总预算 360ms。 */
 export const CARD_ENTRANCE_BUDGET_MS = 360;

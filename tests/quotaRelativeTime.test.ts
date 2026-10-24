@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildResetDisplay,
+  formatInstantMonthDayTime,
   formatInstantShort,
   formatQuotaResetTime,
   formatRelativeInstant,
@@ -123,5 +124,18 @@ describe('buildResetDisplay', () => {
   test('rejects a non-finite instant', () => {
     expect(buildResetDisplay(undefined, Number.NaN, NOW, 'en')).toBeNull();
     expect(buildResetDisplay('08-13 14:30', Number.POSITIVE_INFINITY, NOW, 'en')?.relative).toBeNull();
+  });
+});
+
+describe('formatInstantMonthDayTime', () => {
+  test('renders MM/DD, HH:mm in local time on a 24-hour clock', () => {
+    expect(formatInstantMonthDayTime(new Date(2026, 8, 12, 23, 0).getTime())).toBe('09/12, 23:00');
+    expect(formatInstantMonthDayTime(new Date(2026, 0, 3, 7, 5).getTime())).toBe('01/03, 07:05');
+    expect(formatInstantMonthDayTime(new Date(2026, 11, 31, 0, 0).getTime())).toBe('12/31, 00:00');
+  });
+
+  test('a non-finite instant renders the empty placeholder', () => {
+    expect(formatInstantMonthDayTime(Number.NaN)).toBe('-');
+    expect(formatInstantMonthDayTime(Number.POSITIVE_INFINITY)).toBe('-');
   });
 });

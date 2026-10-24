@@ -1,5 +1,6 @@
 import type { AuthFileItem } from '@/types';
 import { normalizeRecentRequestAuthIndex } from '@/utils/recentRequests';
+import { maskIdentity } from './masking';
 import { isDevinFile, isPluginQuotaFile } from './validators';
 
 const QUOTA_IDENTITY_SEPARATOR = '\0';
@@ -19,6 +20,15 @@ export function getQuotaDisplayName(file: AuthFileItem): string {
   if (!isDevinFile(file) && !isPluginQuotaFile(file)) return file.name;
   const identity = file.email?.trim() || normalizeRecentRequestAuthIndex(file.authIndex);
   return identity ? `${file.name} · ${identity}` : file.name;
+}
+
+/**
+ * The display name as rendered on the quota page: masked unless the user has
+ * chosen to show emails. Search and file mutations keep using raw values.
+ */
+export function formatQuotaIdentity(file: AuthFileItem, showEmails: boolean): string {
+  const displayName = getQuotaDisplayName(file);
+  return showEmails ? displayName : maskIdentity(displayName, file.email);
 }
 
 /** Resolve a cache identity back to the physical filename used by file mutations. */

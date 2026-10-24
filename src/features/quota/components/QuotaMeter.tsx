@@ -7,10 +7,10 @@
  */
 
 import type { CSSProperties } from 'react';
+import { QUOTA_PROGRESS_HIGH_THRESHOLD, QUOTA_PROGRESS_MEDIUM_THRESHOLD } from '../constants';
 import type { QuotaClassMap } from '../types';
 
-export const QUOTA_PROGRESS_HIGH_THRESHOLD = 70;
-export const QUOTA_PROGRESS_MEDIUM_THRESHOLD = 30;
+export { QUOTA_PROGRESS_HIGH_THRESHOLD, QUOTA_PROGRESS_MEDIUM_THRESHOLD };
 
 export interface QuotaMeterProps {
   percent: number | null;

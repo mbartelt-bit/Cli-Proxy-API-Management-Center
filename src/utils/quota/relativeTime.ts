@@ -89,6 +89,22 @@ export function formatInstantShort(ms: number): string {
   });
 }
 
+const pad2 = (value: number) => String(value).padStart(2, '0');
+
+/**
+ * Absolute instant as `MM/DD, HH:mm` — browser-local, 24-hour, and the same
+ * shape in every locale. The quota ledger pairs it with a relative phrase in
+ * dense columns, where a locale-dependent order (`13/09` vs `09/13`) would
+ * make neighbouring cells harder to compare.
+ */
+export function formatInstantMonthDayTime(ms: number): string {
+  if (!Number.isFinite(ms)) return '-';
+  const date = new Date(ms);
+  return `${pad2(date.getMonth() + 1)}/${pad2(date.getDate())}, ${pad2(date.getHours())}:${pad2(
+    date.getMinutes()
+  )}`;
+}
+
 export interface ResetDisplay {
   absolute: string;
   /** Null when no usable instant was available — render the absolute half alone. */
