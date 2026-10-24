@@ -20,7 +20,16 @@ import { getQuotaMap, getQuotaSetter, type QuotaAdapter, type QuotaCardState } f
 const getQuotaState = (adapter: QuotaAdapter, file: AuthFileItem): QuotaCardState | undefined =>
   getQuotaMap(adapter)[getQuotaCacheKey(file)];
 
-export function useQuotaActions(disableControls: boolean) {
+const rawFileName = (file: AuthFileItem) => file.name;
+
+/**
+ * @param nameFor how notifications and confirmations name a credential — the
+ * quota page passes its (possibly masked) display identity.
+ */
+export function useQuotaActions(
+  disableControls: boolean,
+  nameFor: (file: AuthFileItem) => string = rawFileName
+) {
   const { t } = useTranslation();
   const showNotification = useNotificationStore((state) => state.showNotification);
   const showConfirmation = useNotificationStore((state) => state.showConfirmation);
@@ -49,7 +58,10 @@ export function useQuotaActions(disableControls: boolean) {
             [cacheKey]: successState,
           }));
           void enrichQuotaInBackground(adapter, file, data, successState, t);
-          showNotification(t('auth_files.quota_refresh_success', { name: file.name }), 'success');
+          showNotification(
+            t('auth_files.quota_refresh_success', { name: nameFor(file) }),
+            'success'
+          );
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('common.unknown_error');
@@ -60,13 +72,13 @@ export function useQuotaActions(disableControls: boolean) {
             [cacheKey]: adapter.buildErrorState(message, status),
           }));
           showNotification(
-            t('auth_files.quota_refresh_failed', { name: file.name, message }),
+            t('auth_files.quota_refresh_failed', { name: nameFor(file), message }),
             'error'
           );
         });
       }
     },
-    [disableControls, resettingQuotaName, showNotification, t]
+    [disableControls, nameFor, resettingQuotaName, showNotification, t]
   );
 
   const resetQuota = useCallback(
@@ -80,7 +92,7 @@ export function useQuotaActions(disableControls: boolean) {
 
       showConfirmation({
         title: t('codex_quota.reset_confirm_title'),
-        message: t('codex_quota.reset_confirm_message', { name: file.name }),
+        message: t('codex_quota.reset_confirm_message', { name: nameFor(file) }),
         confirmText: t('codex_quota.reset_confirm_button'),
         variant: 'primary',
         onConfirm: async () => {
@@ -94,13 +106,13 @@ export function useQuotaActions(disableControls: boolean) {
                 ...prev,
                 [cacheKey]: adapter.buildSuccessState(data),
               }));
-              showNotification(t('codex_quota.reset_success', { name: file.name }), 'success');
+              showNotification(t('codex_quota.reset_success', { name: nameFor(file) }), 'success');
             });
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : t('common.unknown_error');
             commitIfQuotaCacheCurrent(cacheGeneration, () => {
               showNotification(
-                t('codex_quota.reset_failed', { name: file.name, message }),
+                t('codex_quota.reset_failed', { name: nameFor(file), message }),
                 'error'
               );
             });
@@ -110,7 +122,7 @@ export function useQuotaActions(disableControls: boolean) {
         },
       });
     },
-    [disableControls, resettingQuotaName, showConfirmation, showNotification, t]
+    [disableControls, nameFor, resettingQuotaName, showConfirmation, showNotification, t]
   );
 
   return { resettingQuotaName, refreshQuota, resetQuota };

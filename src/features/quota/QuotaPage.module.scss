@@ -36,6 +36,17 @@
   }
 }
 
+/* 视图切换（台账 / 卡片）：紧凑下拉，固定宽度贴在 tabs 行右端。 */
+.viewSelect {
+  flex: 0 0 150px;
+  min-width: 0;
+
+  button[aria-haspopup='listbox'] {
+    height: 30px;
+    border-radius: 8px;
+  }
+}
+
 .toolbar {
   display: flex;
   align-items: center;
@@ -169,6 +180,14 @@
 
   .sort button[aria-haspopup='listbox'] {
     height: 40px;
+  }
+
+  .viewSelect {
+    flex-basis: 116px;
+
+    button[aria-haspopup='listbox'] {
+      height: 36px;
+    }
   }
 }
 

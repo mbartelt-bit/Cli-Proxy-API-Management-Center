@@ -10,9 +10,8 @@ describe('quota toolbar presentation contracts', () => {
     expect(source).toContain('ref={searchInputRef}');
     expect(source).toContain('{search && (');
     expect(source).toContain("aria-label={t('quota_management.search_clear')}");
-    expect(source).toContain(
-      "handleSearchChange('');\n                  searchInputRef.current?.focus();"
-    );
+    // Whitespace-tolerant: the toolbar is nested under the Cards-view gate.
+    expect(source).toMatch(/handleSearchChange\(''\);\s*searchInputRef\.current\?\.focus\(\);/);
     expect(source).toContain('<IconX size={14} aria-hidden="true" />');
     expect(styles).toMatch(/&::-webkit-search-cancel-button,[\s\S]*?appearance: none;/);
   });
@@ -28,5 +27,21 @@ describe('quota toolbar presentation contracts', () => {
     expect(styles).toContain('&:focus-within');
     expect(styles).toContain('&:focus-visible');
     expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
+  });
+
+  test('shows search and sort only in Cards view, where they apply', () => {
+    const gate = source.indexOf('{!isLedger && (');
+    expect(gate).toBeGreaterThan(source.indexOf('<ProviderTabs'));
+    expect(source.indexOf('<div className={styles.toolbar}>')).toBeGreaterThan(gate);
+    expect(source).toContain('isLedger ? tabEntries : filterEntriesBySearch(tabEntries, search)');
+  });
+
+  test('places the view-mode select on the provider tabs row', () => {
+    const tabsRow = source.indexOf('<div className={styles.tabsRow} data-reveal>');
+    const viewSelect = source.indexOf('<div className={styles.viewSelect}>');
+    expect(viewSelect).toBeGreaterThan(source.indexOf('<ProviderTabs', tabsRow));
+    expect(viewSelect).toBeLessThan(source.indexOf('<div className={styles.toolbar}>'));
+    expect(source).toContain("ariaLabel={t('quota_management.view_label')}");
+    expect(styles).toMatch(/\.viewSelect\s*\{\s*flex: 0 0 150px;/);
   });
 });
