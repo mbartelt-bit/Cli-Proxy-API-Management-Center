@@ -37,7 +37,8 @@ describe('quota toolbar presentation contracts', () => {
   });
 
   test('places the view-mode select on the provider tabs row', () => {
-    const tabsRow = source.indexOf('<div className={styles.tabsRow} data-reveal>');
+    const tabsRow = source.indexOf('className={styles.tabsRow}');
+    expect(tabsRow).toBeGreaterThan(-1);
     const viewSelect = source.indexOf('<div className={styles.viewSelect}>');
     expect(viewSelect).toBeGreaterThan(source.indexOf('<ProviderTabs', tabsRow));
     expect(viewSelect).toBeLessThan(source.indexOf('<div className={styles.toolbar}>'));

@@ -14,6 +14,21 @@ export const QUOTA_TAB_ORDER: readonly QuotaProviderType[] = [
 
 export type QuotaTabId = 'all' | QuotaProviderType;
 
+/**
+ * Tabs the quota page always lists, even with no credentials — the row the
+ * ledger was designed around. Providers added since (Devin, Meta, plugins)
+ * only get a tab once they have a credential (or are the active tab), so an
+ * empty tab never pushes the row under the view select.
+ */
+export const QUOTA_ALWAYS_VISIBLE_TABS: readonly QuotaTabId[] = [
+  'all',
+  'claude',
+  'antigravity',
+  'codex',
+  'xai',
+  'kimi',
+];
+
 /** 页级分页固定 20/页，同时把「刷新全部」的上游并发限制在 20。 */
 export const QUOTA_PAGE_SIZE = 20;
 

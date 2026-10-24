@@ -8,7 +8,10 @@ import {
   filterEntriesBySearch,
   isQuotaRefreshDisabled,
   paginate,
+  resolveQuotaListPresentation,
   resolveQuotaProviderType,
+  resolveSettledQuotaTab,
+  resolveVisibleQuotaTabs,
   sortQuotaEntries,
   type QuotaFileEntry,
 } from '@/features/quota/logic';
@@ -258,5 +261,82 @@ describe('sortQuotaEntries', () => {
     const last = entries[entries.length - 1].file.name;
     const sorted = sortQuotaEntries(entries, 'soonest', resolver({ [last]: 1 }));
     expect(paginate(sorted, 1, 2).pageItems[0].file.name).toBe(last);
+  });
+});
+
+describe('quota tab row', () => {
+  const counts = (extra: Record<string, number> = {}) => ({
+    ...buildTabCounts([]),
+    ...extra,
+  });
+
+  test('always lists all and the five reference providers, even when empty', () => {
+    expect(resolveVisibleQuotaTabs(counts(), 'all')).toEqual([
+      'all',
+      'claude',
+      'antigravity',
+      'codex',
+      'xai',
+      'kimi',
+    ]);
+  });
+
+  test('lists Devin, Meta and plugins only with a credential or while active', () => {
+    expect(resolveVisibleQuotaTabs(counts({ meta: 2 }), 'all')).toEqual([
+      'all',
+      'claude',
+      'antigravity',
+      'codex',
+      'xai',
+      'kimi',
+      'meta',
+    ]);
+    // A persisted tab stays listed (and active) while the list is loading.
+    expect(resolveVisibleQuotaTabs(counts(), 'plugin')).toContain('plugin');
+    expect(resolveVisibleQuotaTabs(counts(), 'plugin')).not.toContain('devin');
+    // Tab order is unchanged.
+    expect(resolveVisibleQuotaTabs(counts({ devin: 1, plugin: 1 }), 'meta').slice(-3)).toEqual([
+      'devin',
+      'meta',
+      'plugin',
+    ]);
+  });
+
+  test('a hidden-by-default tab that is empty once the list settles falls back to all', () => {
+    expect(resolveSettledQuotaTab('meta', counts())).toBe('all');
+    expect(resolveSettledQuotaTab('meta', counts({ meta: 1 }))).toBe('meta');
+    // Always-visible tabs keep their (empty-state) page.
+    expect(resolveSettledQuotaTab('antigravity', counts())).toBe('antigravity');
+    expect(resolveSettledQuotaTab('all', counts())).toBe('all');
+  });
+});
+
+describe('quota list presentation', () => {
+  const base = { loading: false, ledger: true, listIsCurrent: true, entryCount: 4 };
+
+  test('the ledger stays mounted while it reloads a list it already shows', () => {
+    // Unmounting it replayed the entrance and collapsed opened summary panels.
+    expect(resolveQuotaListPresentation({ ...base, loading: true })).toBe('list');
+  });
+
+  test('skeletons before this session has a list, or with nothing to keep', () => {
+    expect(resolveQuotaListPresentation({ ...base, loading: true, listIsCurrent: false })).toBe(
+      'skeleton'
+    );
+    expect(resolveQuotaListPresentation({ ...base, loading: true, entryCount: 0 })).toBe(
+      'skeleton'
+    );
+  });
+
+  test('cards keep their skeleton on every load', () => {
+    expect(resolveQuotaListPresentation({ ...base, ledger: false, loading: true })).toBe(
+      'skeleton'
+    );
+    expect(resolveQuotaListPresentation({ ...base, ledger: false })).toBe('list');
+  });
+
+  test('an empty settled list shows the empty state', () => {
+    expect(resolveQuotaListPresentation({ ...base, entryCount: 0 })).toBe('empty');
+    expect(resolveQuotaListPresentation({ ...base, ledger: false, entryCount: 0 })).toBe('empty');
   });
 });

@@ -717,20 +717,39 @@ export function formatLedgerPercent(value: number | null): string {
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
+/** The window's own localized name (`Weekly limit`), without its group. */
+export function formatLedgerWindowName(t: Translate, window: LedgerWindow): string {
+  return window.labelKey ? t(window.labelKey, window.labelParams) : window.label;
+}
+
 /**
- * Localized window label, prefixed by its group when `qualifyScope` says so.
- * Pass the column's `LedgerKind.qualifyScope` — a provider-level decision —
- * so every cell of a column reads the same.
+ * The window's localized group (`Gemini models`) when `qualifyScope` says
+ * labels name it; null otherwise. Pass the column's `LedgerKind.qualifyScope`
+ * — a provider-level decision — so every cell of a column reads the same.
+ */
+export function formatLedgerWindowScope(
+  t: Translate,
+  window: LedgerWindow,
+  qualifyScope: boolean
+): string | null {
+  if (!qualifyScope || !window.scope) return null;
+  const scope = window.scope.labelKey ? t(window.scope.labelKey) : window.scope.label;
+  return scope || null;
+}
+
+/**
+ * Localized window label, followed by its group when `qualifyScope` says so:
+ * `Weekly limit · Gemini models`. The window name leads so that, where the
+ * label is cut short, the qualifier goes first and the window stays legible.
  */
 export function formatLedgerWindowLabel(
   t: Translate,
   window: LedgerWindow,
   qualifyScope: boolean
 ): string {
-  const base = window.labelKey ? t(window.labelKey, window.labelParams) : window.label;
-  if (!qualifyScope || !window.scope) return base;
-  const scope = window.scope.labelKey ? t(window.scope.labelKey) : window.scope.label;
-  return scope ? `${scope} · ${base}` : base;
+  const name = formatLedgerWindowName(t, window);
+  const scope = formatLedgerWindowScope(t, window, qualifyScope);
+  return scope ? `${name} · ${scope}` : name;
 }
 
 /** The label every cell of a column, and the summary, show for it. */

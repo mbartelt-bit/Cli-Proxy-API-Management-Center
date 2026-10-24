@@ -6,9 +6,13 @@
  * page) from whatever quota is loaded; rows show the page. Both read the same
  * provider models, so a group's columns and its summary agree on which window
  * leads. Pagination and the timeline stay with the page shell.
+ *
+ * Every group shares one identity width and one window-cell width (see
+ * QuotaLedger.module.scss), so column N starts at the same x in every group
+ * whatever each group's own number of windows.
  */
 
-import { useId, useMemo, type CSSProperties } from 'react';
+import { useId, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useNow } from '@/hooks/useNow';
@@ -40,6 +44,14 @@ export interface QuotaLedgerProps {
   resettingQuotaName: string | null;
   onRefresh: (entry: QuotaFileEntry) => void;
   onReset: (entry: QuotaFileEntry) => void;
+  /**
+   * Play the summary → groups cascade. Read once at mount: only the page's
+   * first data render animates; later mounts appear in place.
+   */
+  animateEntrance?: boolean;
+  /** Providers whose summary panel shows its other limits (kept by the page). */
+  expandedSummaries?: ReadonlySet<QuotaProviderType>;
+  onSummaryExpandedChange?: (provider: QuotaProviderType, expanded: boolean) => void;
   /** Injectable for tests; defaults to the shared minute clock. */
   now?: number;
 }
@@ -57,12 +69,16 @@ export function QuotaLedger({
   resettingQuotaName,
   onRefresh,
   onReset,
+  animateEntrance = false,
+  expandedSummaries,
+  onSummaryExpandedChange,
   now: nowProp,
 }: QuotaLedgerProps) {
   const { t } = useTranslation();
   const tick = useNow(nowProp === undefined);
   const now = nowProp ?? tick;
-  // Summary, then each group, cascade in once when the ledger mounts.
+  // Summary, then each group, cascade in — only if this mount is the page's first data render.
+  const [reveal] = useState(animateEntrance);
   const revealRef = useRevealGroup<HTMLDivElement>();
 
   const models = useMemo(
@@ -90,16 +106,16 @@ export function QuotaLedger({
       .map((model) => ({ model, entries: byProvider.get(model.provider) ?? [] }));
   }, [models, pageEntries]);
 
-  // One track count for the whole page: every group shares the widest
-  // group's template, so window columns line up from group to group.
-  const trackCount = groups.reduce(
-    (widest, { model }) => Math.max(widest, model.columns.length),
-    1
-  );
-
   return (
-    <div className={styles.ledger} ref={revealRef}>
-      <QuotaLedgerSummary models={models} resolvedTheme={resolvedTheme} now={now} />
+    <div className={styles.ledger} ref={reveal ? revealRef : undefined}>
+      <QuotaLedgerSummary
+        models={models}
+        resolvedTheme={resolvedTheme}
+        now={now}
+        reveal={reveal}
+        expandedProviders={expandedSummaries}
+        onExpandedChange={onSummaryExpandedChange}
+      />
 
       <div className={styles.groups} role="region" aria-label={t('quota_management.ledger_label')}>
         {groups.map(({ model, entries }) => (
@@ -107,7 +123,7 @@ export function QuotaLedger({
             key={model.provider}
             model={model}
             entries={entries}
-            trackCount={trackCount}
+            reveal={reveal}
             quotaFor={quotaFor}
             showEmails={showEmails}
             canUseActions={canUseActions}
@@ -125,8 +141,7 @@ export function QuotaLedger({
 interface QuotaLedgerGroupProps {
   model: LedgerProviderModel;
   entries: readonly QuotaFileEntry[];
-  /** Window tracks in the shared page template (≥ this group's columns). */
-  trackCount: number;
+  reveal: boolean;
   quotaFor: (entry: QuotaFileEntry) => QuotaCardState | undefined;
   showEmails: boolean;
   canUseActions: boolean;
@@ -139,7 +154,7 @@ interface QuotaLedgerGroupProps {
 function QuotaLedgerGroup({
   model,
   entries,
-  trackCount,
+  reveal,
   quotaFor,
   showEmails,
   canUseActions,
@@ -150,10 +165,11 @@ function QuotaLedgerGroup({
 }: QuotaLedgerGroupProps) {
   const { t } = useTranslation();
   const headingId = useId();
-  const columnStyle = { '--ledger-columns': trackCount } as CSSProperties;
+  // This group's own window count: it sizes the windows track, never another group's.
+  const columnStyle = { '--ledger-columns': Math.max(1, model.columns.length) } as CSSProperties;
 
   return (
-    <section className={styles.group} aria-labelledby={headingId} data-reveal>
+    <section className={styles.group} aria-labelledby={headingId} data-reveal={reveal || undefined}>
       <h2 id={headingId} className={styles.groupTitle}>
         {getTypeLabel(t, model.provider)}
         <span className={styles.groupCount} aria-hidden="true">

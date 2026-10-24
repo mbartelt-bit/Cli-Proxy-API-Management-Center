@@ -24,6 +24,8 @@
 /* 提供商导航独占一行，保留原生横向滚动。 */
 
 .tabsRow {
+  --tabs-fade: 28px;
+
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -35,10 +37,26 @@
     min-width: 0;
   }
 
-  /* With the view select beside them the tabs can overflow; fade the
-   * trailing edge so a clipped tab reads as "scroll for more". */
-  > :first-child:not(:only-child) {
-    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  /* With the view select beside them the tabs can overflow. `data-fade`
+   * (useScrollEdges) names the side(s) still hiding tabs; only those fade,
+   * so a fully scrolled or fitting strip shows its last tab, underline and
+   * focus ring in full. (`#000` here is mask opacity, not a colour.) */
+  &[data-fade='end'] > :first-child {
+    mask-image: linear-gradient(to right, #000 calc(100% - var(--tabs-fade)), transparent);
+  }
+
+  &[data-fade='start'] > :first-child {
+    mask-image: linear-gradient(to left, #000 calc(100% - var(--tabs-fade)), transparent);
+  }
+
+  &[data-fade='both'] > :first-child {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--tabs-fade),
+      #000 calc(100% - var(--tabs-fade)),
+      transparent
+    );
   }
 }
 

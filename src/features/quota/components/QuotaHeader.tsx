@@ -66,13 +66,10 @@ export function QuotaHeader(props: QuotaHeaderProps) {
         </p>
       </div>
       <div className={styles.actions} data-reveal>
-        {/* Privacy toggle for screen sharing: pressed = emails visible. */}
-        <button
-          type="button"
-          className={styles.secondaryAction}
-          aria-pressed={showEmails}
-          onClick={onToggleEmails}
-        >
+        {/* Privacy switch for screen sharing. The label names the action it
+         * performs, so it is a plain button: a toggle button (aria-pressed)
+         * must keep one label, or "Hide emails, pressed" reads as hidden. */}
+        <button type="button" className={styles.secondaryAction} onClick={onToggleEmails}>
           {t(showEmails ? 'quota_management.hide_emails' : 'quota_management.show_emails')}
         </button>
         <button

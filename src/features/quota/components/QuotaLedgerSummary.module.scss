@@ -126,7 +126,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- segmented bar: one segment per credential ---------- */
+/* ---------- segmented bar: one segment per credential ----------
+ * Segments may shrink to nothing and the bar clips, so it can never paint
+ * into the neighbouring cell; past SEGMENT_LIMIT credentials the component
+ * switches to the tier distribution below instead. */
 
 .segments {
   --segment-gap: 6px;
@@ -135,6 +138,7 @@
   gap: var(--segment-gap);
   margin: 10px 0 0;
   min-width: 0;
+  overflow: hidden;
 
   &[data-density='compact'] {
     --segment-gap: 3px;
@@ -143,12 +147,16 @@
   &[data-density='dense'] {
     --segment-gap: 1px;
   }
+
+  &[data-mode='distribution'] {
+    --segment-gap: 2px;
+  }
 }
 
 .segment {
   position: relative;
   flex: 1 1 0;
-  min-width: 2px;
+  min-width: 0;
   height: 4px;
   border-radius: $radius-full;
   background: color-mix(in srgb, var(--text-primary) 10%, transparent);
@@ -179,6 +187,31 @@
 @keyframes ledger-segment-fill {
   from {
     transform: scaleX(0);
+  }
+}
+
+/* Tier distribution: one stacked meter, each tier as wide as its share of
+ * the credentials (flex-grow = count), healthiest first. Not reported reads
+ * as bare track. */
+.share {
+  flex: 0 1 0;
+  min-width: 0;
+  height: 4px;
+  border-radius: $radius-full;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  transform-origin: left center;
+  animation: ledger-segment-fill 480ms var(--ease-out-strong, ease-out) both;
+
+  &[data-tier='high'] {
+    background: var(--viz-success);
+  }
+
+  &[data-tier='medium'] {
+    background: var(--quota-medium-color);
+  }
+
+  &[data-tier='low'] {
+    background: var(--viz-failure);
   }
 }
 
@@ -259,7 +292,7 @@
   background: none;
   font: inherit;
   font-size: 12px;
-  color: var(--ledger-quiet, var(--text-tertiary));
+  color: var(--ledger-action, var(--text-secondary));
   cursor: pointer;
   transition:
     color var(--dur-hover, 200ms) var(--ease-out-strong, ease-out),
@@ -281,6 +314,10 @@
 @media (prefers-reduced-motion: reduce) {
   .segmentFill {
     transition: none;
+    animation: none;
+  }
+
+  .share {
     animation: none;
   }
 

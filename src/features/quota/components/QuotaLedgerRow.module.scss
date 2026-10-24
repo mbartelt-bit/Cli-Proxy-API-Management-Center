@@ -2,9 +2,10 @@
 
 /* ============================================================
  * Ledger row. The grid template lives on the group list
- * (QuotaLedger.module.scss); each row is a subgrid of it so window
- * columns line up across every row of a provider group, whatever
- * actions a particular row shows.
+ * (QuotaLedger.module.scss); each row is a subgrid of it, so every row
+ * of a provider group gets the same windows track whatever actions a
+ * particular row shows. Window cells share one width page-wide, so
+ * column N sits at the same x in every group.
  * ============================================================ */
 
 .row {
@@ -20,14 +21,16 @@
   }
 }
 
-/* Browsers without subgrid get the same template per row (near-identical
- * alignment; only an unusually wide action set can nudge a row). */
+/* Browsers without subgrid get the same template per row: columns keep
+ * their positions; only an unusually wide action set can make one row's
+ * windows wrap sooner than its neighbours'. */
 @supports not (grid-template-columns: subgrid) {
   .row {
     grid-template-columns:
-      minmax(0, 1.5fr) repeat(var(--ledger-columns, 1), minmax(0, 1fr))
-      minmax(min-content, 1.4fr);
-    column-gap: 24px;
+      var(--ledger-identity)
+      minmax(min(var(--ledger-windows-need), var(--ledger-windows-room)), 1fr)
+      auto;
+    column-gap: var(--ledger-gap);
   }
 }
 
@@ -62,13 +65,37 @@
   @include text-ellipsis;
 }
 
+/* ---------- windows: this group's cells at the shared width ---------- */
+
+/* Cells wrap onto another line rather than shrink, so a wide group keeps
+ * every column on the page-wide positions. */
+.windows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px var(--ledger-gap);
+  min-width: 0;
+}
+
 /* ---------- window cell ---------- */
 
 .cell {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 0 1 var(--ledger-window);
   min-width: 0;
+}
+
+/* The group a repeated window belongs to (`Gemini models`), on a line of
+ * its own so it never crowds out the window name. Empty cells keep the
+ * line so the bars of a row stay level. */
+.cellScope {
+  min-height: 16px;
+  margin-bottom: -3px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-tertiary);
+  @include text-ellipsis;
 }
 
 .cellHead {
@@ -155,7 +182,7 @@
 
 /* Error / no-windows: one message across every window column. */
 .cellWide {
-  grid-column: 2 / -2;
+  flex-basis: 100%;
 }
 
 .cellNote {
@@ -189,8 +216,8 @@
 
 /* ---------- actions ---------- */
 
-/* Always the last track: groups with fewer windows than the page's widest
- * group leave their spare window tracks empty, so columns line up page-wide. */
+/* Always the last track, right-aligned; its buttons wrap before the
+ * windows give up their line. */
 .actions {
   grid-column: -2 / -1;
   display: flex;
@@ -213,7 +240,7 @@
   font: inherit;
   font-size: 12px;
   line-height: 1.3;
-  color: color-mix(in srgb, var(--text-tertiary) 50%, var(--ledger-quiet, var(--text-tertiary)));
+  color: var(--ledger-action, var(--text-secondary));
   white-space: nowrap;
   cursor: pointer;
   transition:
@@ -267,26 +294,16 @@
 
 /* ---------- two-tier: identity + actions, then the windows ---------- */
 
-/* Same container threshold as QuotaLedger.module.scss. Window cells keep
- * the page-wide track width (1 / --ledger-columns of the line), so they
- * still line up from row to row and group to group. */
+/* Same container threshold as QuotaLedger.module.scss. The windows get a
+ * line of their own; cells keep the shared width, so they still line up
+ * from row to row and group to group. */
 @media (min-width: #{$breakpoint-mobile + 1}) {
-  @container quota-ledger-groups (max-width: 919px) {
+  @container quota-ledger-groups (max-width: 879px) {
     .row {
-      --ledger-gap: 20px;
-
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 0 var(--ledger-gap);
-
-      /* Line break between the identity/actions tier and the windows
-       * (cells carry the vertical gap; a row gap would count this line). */
-      &::before {
-        content: '';
-        order: 1;
-        flex-basis: 100%;
-      }
+      gap: 10px var(--ledger-gap);
     }
 
     .identity {
@@ -297,15 +314,9 @@
       flex: 0 1 auto;
     }
 
-    .cell {
-      order: 2;
-      margin-top: 10px;
-      flex: 0 0
-        calc((100% - (var(--ledger-columns, 1) - 1) * var(--ledger-gap)) / var(--ledger-columns, 1));
-    }
-
-    .cellWide {
-      flex-basis: 100%;
+    .windows {
+      order: 1;
+      flex: 1 1 100%;
     }
 
     .cellNote,
@@ -319,13 +330,16 @@
 
 @include mobile {
   .row {
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr));
-    gap: 12px 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
   }
 
-  .identity,
-  .actions {
-    grid-column: 1 / -1;
+  .windows {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr));
+    gap: 12px 18px;
   }
 
   .actions {

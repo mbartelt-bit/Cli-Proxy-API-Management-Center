@@ -18,6 +18,8 @@ import {
   formatLedgerKindLabel,
   formatLedgerPercent,
   formatLedgerWindowLabel,
+  formatLedgerWindowName,
+  formatLedgerWindowScope,
   orderLedgerColumns,
   pickHeadlineKind,
   quotaTier,
@@ -729,8 +731,8 @@ describe('extractLedgerWindows: other providers', () => {
     const model = buildLedgerProviderModel('antigravity', [{ id: 'a', windows }], NOW);
     expect(model.qualifyScopes).toBe(true);
     expect(model.kinds.map((kind) => formatLedgerKindLabel(t, kind))).toEqual([
-      'antigravity_quota.group_gemini_models · antigravity_quota.weekly_limit',
-      'antigravity_quota.group_claude_gpt_models · antigravity_quota.five_hour_limit',
+      'antigravity_quota.weekly_limit · antigravity_quota.group_gemini_models',
+      'antigravity_quota.five_hour_limit · antigravity_quota.group_claude_gpt_models',
     ]);
   });
 
@@ -763,7 +765,7 @@ describe('extractLedgerWindows: other providers', () => {
       const model = buildLedgerProviderModel('antigravity', order, NOW);
       expect(model.qualifyScopes).toBe(true);
       const gemini = model.kinds.find((kind) => kind.key === geminiKey)!;
-      const expected = 'antigravity_quota.group_gemini_models · antigravity_quota.weekly_limit';
+      const expected = 'antigravity_quota.weekly_limit · antigravity_quota.group_gemini_models';
       // Summary label and every row's cell in the column read the same.
       expect(model.headline?.key).toBe(geminiKey);
       expect(formatLedgerKindLabel(t, model.headline!)).toBe(expected);
@@ -1120,8 +1122,28 @@ describe('ledger formatting', () => {
       resetAtMs: null,
       periodHours: null,
     };
-    expect(formatLedgerWindowLabel(t, scoped, true)).toBe('Group A · Weekly');
+    expect(formatLedgerWindowLabel(t, scoped, true)).toBe('Weekly · Group A');
     expect(formatLedgerWindowLabel(t, scoped, false)).toBe('Weekly');
     expect(formatLedgerWindowLabel(t, { ...scoped, scope: undefined }, true)).toBe('Weekly');
+  });
+
+  test('the window name leads and the scope is available on its own', () => {
+    // Truncation cuts from the end: the qualifier must go before the window name.
+    const scoped: LedgerWindow = {
+      key: 'g/w',
+      label: 'Weekly',
+      labelKey: 'antigravity_quota.weekly_limit',
+      scope: { label: 'Gemini Models', labelKey: 'antigravity_quota.group_gemini_models' },
+      remaining: null,
+      resetAtMs: null,
+      periodHours: null,
+    };
+    expect(formatLedgerWindowName(t, scoped)).toBe('antigravity_quota.weekly_limit');
+    expect(formatLedgerWindowScope(t, scoped, true)).toBe('antigravity_quota.group_gemini_models');
+    expect(formatLedgerWindowScope(t, scoped, false)).toBeNull();
+    expect(formatLedgerWindowScope(t, { ...scoped, scope: { label: '' } }, true)).toBeNull();
+    expect(
+      formatLedgerWindowLabel(t, scoped, true).startsWith(formatLedgerWindowName(t, scoped))
+    ).toBe(true);
   });
 });

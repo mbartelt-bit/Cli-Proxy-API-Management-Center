@@ -13,7 +13,12 @@ import { META_CONFIG } from './providers/meta/data';
 import { PLUGIN_CONFIG } from './providers/plugin/data';
 import { XAI_CONFIG } from './providers/xai/data';
 import type { QuotaProviderType } from './providers/types';
-import { QUOTA_TAB_ORDER, type QuotaSortMode, type QuotaTabId } from './constants';
+import {
+  QUOTA_ALWAYS_VISIBLE_TABS,
+  QUOTA_TAB_ORDER,
+  type QuotaSortMode,
+  type QuotaTabId,
+} from './constants';
 
 const QUOTA_FILTER_MAP: Record<QuotaProviderType, (file: AuthFileItem) => boolean> = {
   antigravity: ANTIGRAVITY_CONFIG.filterFn,
@@ -125,6 +130,58 @@ export function buildTabCounts(entries: QuotaFileEntry[]): Record<string, number
     counts[entry.type] += 1;
   }
   return counts;
+}
+
+const QUOTA_ALWAYS_VISIBLE_TAB_SET = new Set<string>(QUOTA_ALWAYS_VISIBLE_TABS);
+
+const hasOwnTab = (tab: QuotaTabId, counts: Record<string, number>): boolean =>
+  QUOTA_ALWAYS_VISIBLE_TAB_SET.has(tab) || (counts[tab] ?? 0) > 0;
+
+/**
+ * The tabs the quota page lists, in tab order: the always-visible row, any
+ * other provider with at least one credential, and the active tab — so a
+ * persisted tab stays reachable while the list is still loading.
+ */
+export function resolveVisibleQuotaTabs(
+  counts: Record<string, number>,
+  active: QuotaTabId
+): QuotaTabId[] {
+  const tabs: QuotaTabId[] = ['all', ...QUOTA_TAB_ORDER];
+  return tabs.filter((tab) => tab === active || hasOwnTab(tab, counts));
+}
+
+/**
+ * The tab to keep once the credential list is current: a tab that is only
+ * listed because it is active (hidden by default and now empty) falls back
+ * to `all`, so a persisted tab id never points at a tab the row omits.
+ */
+export function resolveSettledQuotaTab(
+  tab: QuotaTabId,
+  counts: Record<string, number>
+): QuotaTabId {
+  return hasOwnTab(tab, counts) ? tab : 'all';
+}
+
+export type QuotaListPresentation = 'skeleton' | 'empty' | 'list';
+
+/**
+ * What the list area shows. The card grid shows skeletons whenever the
+ * credential list loads (remounted cards skip their entrance). The ledger
+ * stays mounted while it reloads a list this session already shows:
+ * unmounting it replayed its entrance and collapsed the summary panels the
+ * user had opened. It only shows skeletons before the session has a list, or
+ * when there is nothing on screen to keep.
+ */
+export function resolveQuotaListPresentation(input: {
+  loading: boolean;
+  ledger: boolean;
+  /** The list on screen belongs to the current session. */
+  listIsCurrent: boolean;
+  entryCount: number;
+}): QuotaListPresentation {
+  const { loading, ledger, listIsCurrent, entryCount } = input;
+  if (loading) return ledger && listIsCurrent && entryCount > 0 ? 'list' : 'skeleton';
+  return entryCount === 0 ? 'empty' : 'list';
 }
 
 export const isQuotaRefreshDisabled = (

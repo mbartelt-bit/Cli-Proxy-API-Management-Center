@@ -26,7 +26,7 @@ import { useRevealGroup } from '@/hooks/motion';
 import { useAuthStore, useQuotaStore, useThemeStore } from '@/stores';
 import type { AuthFileItem, ResolvedTheme } from '@/types';
 import { maskIdentity } from '@/utils/quota';
-import { formatQuotaIdentity, getQuotaCacheKey } from '@/utils/quota/identity';
+import { getQuotaCacheKey } from '@/utils/quota/identity';
 import { ProviderTabs } from '@/features/authFiles/components/ProviderTabs';
 import { QuotaHeader } from './components/QuotaHeader';
 import { QuotaCard } from './components/QuotaCard';
@@ -50,6 +50,9 @@ import {
   filterEntriesByTab,
   filterEntriesBySearch,
   paginate,
+  resolveQuotaListPresentation,
+  resolveSettledQuotaTab,
+  resolveVisibleQuotaTabs,
   sortQuotaEntries,
   type QuotaFileEntry,
 } from './logic';
@@ -57,12 +60,13 @@ import { nextRecoveryMs } from './resetSchedule';
 import { QUOTA_ADAPTERS, getQuotaSetter, type QuotaCardState } from './providers';
 import type { QuotaProviderType } from './providers/types';
 import { useDevinQuotaAutoLoad } from './providers/devin/useDevinQuotaAutoLoad';
+import { useEmailVisibility } from './hooks/useEmailVisibility';
 import { useQuotaActions } from './hooks/useQuotaActions';
 import { useQuotaBatchLoader } from './hooks/useQuotaBatchLoader';
+import { scrollFadeAttribute, useScrollEdges } from './hooks/useScrollEdges';
 import { readQuotaUiState, writeQuotaUiState } from './uiState';
 import styles from './QuotaPage.module.scss';
 
-const TAB_IDS: string[] = ['all', ...QUOTA_TAB_ORDER];
 const SKELETON_CARD_COUNT = 6;
 
 /** Timeline lane labels: the raw display name, or its masked form. */
@@ -85,8 +89,10 @@ export function QuotaPage() {
     () => readQuotaUiState()?.viewMode ?? DEFAULT_QUOTA_VIEW_MODE
   );
   // Masked unless explicitly revealed in this session (privacy while sharing a screen).
-  const [showEmails, setShowEmails] = useState<boolean>(
-    () => readQuotaUiState()?.showEmails ?? false
+  // Notifications read the visibility when they are shown, not when the action started.
+  const { showEmails, toggleEmails, noticeNameFor } = useEmailVisibility(
+    () => readQuotaUiState()?.showEmails ?? false,
+    files
   );
   const isLedger = viewMode === 'ledger';
   const [page, setPage] = useState(1);
@@ -94,6 +100,11 @@ export function QuotaPage() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   // 页头 + tabs 的入场级联（标题 → meta → 动作 → tabs，级差 70ms）
   const revealRef = useRevealGroup<HTMLDivElement>();
+  const tabsRowRef = useRef<HTMLDivElement>(null);
+  // Summary panels the user opened stay open across reloads and remounts.
+  const [expandedSummaries, setExpandedSummaries] = useState<ReadonlySet<QuotaProviderType>>(
+    () => new Set()
+  );
 
   const disableControls = connectionStatus !== 'connected';
 
@@ -192,7 +203,17 @@ export function QuotaPage() {
 
   const entries = useMemo(() => classifyQuotaFiles(files), [files]);
   const tabCounts = useMemo(() => buildTabCounts(entries), [entries]);
-  const tabEntries = useMemo(() => filterEntriesByTab(entries, tab), [entries, tab]);
+  // Once this session's list is in, a tab that is hidden by default and now
+  // empty yields to `all` (the effect below persists the switch); until then
+  // the stored tab stays listed and active.
+  const listIsCurrent = filesGeneration === sessionGeneration;
+  const listSettled = !loading && !error && listIsCurrent;
+  const activeTab = listSettled ? resolveSettledQuotaTab(tab, tabCounts) : tab;
+  const visibleTabs = useMemo(
+    () => resolveVisibleQuotaTabs(tabCounts, activeTab),
+    [tabCounts, activeTab]
+  );
+  const tabEntries = useMemo(() => filterEntriesByTab(entries, activeTab), [entries, activeTab]);
   const filteredEntries = useMemo(
     () => (isLedger ? tabEntries : filterEntriesBySearch(tabEntries, search)),
     [isLedger, tabEntries, search]
@@ -223,6 +244,12 @@ export function QuotaPage() {
     writeQuotaUiState({ tab: next as QuotaTabId });
   }, []);
 
+  useEffect(() => {
+    if (activeTab !== tab) handleTabChange(activeTab);
+  }, [activeTab, handleTabChange, tab]);
+
+  const tabEdges = useScrollEdges(tabsRowRef, visibleTabs.join('|'));
+
   const handleSortModeChange = useCallback((next: string) => {
     setSortMode(next as QuotaSortMode);
     setPage(1);
@@ -235,13 +262,18 @@ export function QuotaPage() {
     writeQuotaUiState({ viewMode: next as QuotaViewMode });
   }, []);
 
-  const handleToggleEmails = useCallback(() => {
-    setShowEmails((current) => {
-      const next = !current;
-      writeQuotaUiState({ showEmails: next });
-      return next;
-    });
-  }, []);
+  const handleSummaryExpandedChange = useCallback(
+    (provider: QuotaProviderType, expanded: boolean) => {
+      setExpandedSummaries((current) => {
+        if (current.has(provider) === expanded) return current;
+        const next = new Set(current);
+        if (expanded) next.add(provider);
+        else next.delete(provider);
+        return next;
+      });
+    },
+    []
+  );
 
   const sortOptions = useMemo(
     () =>
@@ -255,11 +287,6 @@ export function QuotaPage() {
     [t]
   );
 
-  // Notifications and confirmations name credentials the way the page shows them.
-  const noticeNameFor = useCallback(
-    (file: AuthFileItem) => formatQuotaIdentity(file, showEmails),
-    [showEmails]
-  );
   const timelineDisplayNameFor = showEmails ? rawDisplayName : maskedDisplayName;
 
   const { loadedCount, attentionCount } = useMemo(() => {
@@ -358,16 +385,17 @@ export function QuotaPage() {
 
   const canUseActions = !disableControls && !loading && filesGeneration === sessionGeneration;
 
-  /* ---------- 首屏卡片一次性级联入场 ----------
-   * 首批数据渲染后立即翻转 cardsAnimated；已挂载的卡片在挂载时捕获过自己的
+  /* ---------- 首屏卡片 / 台账一次性级联入场 ----------
+   * 首批数据渲染后立即翻转 entrancePlayed；已挂载的卡片在挂载时捕获过自己的
    * 延迟（QuotaCard 内 useState 初始化），后续切 tab/翻页/刷新新挂载的卡片
-   * 拿到 null —— 不重播。 */
+   * 拿到 null —— 不重播。The ledger captures the same flag at mount, so a
+   * later mount (view switch, empty-tab round trip) does not replay it. */
 
-  const [cardsAnimated, setCardsAnimated] = useState(false);
-  const enableCardEntrance = !cardsAnimated && !loading && pageItems.length > 0;
+  const [entrancePlayed, setEntrancePlayed] = useState(false);
+  const enableCardEntrance = !entrancePlayed && !loading && pageItems.length > 0;
   useEffect(() => {
     if (enableCardEntrance) {
-      setCardsAnimated(true);
+      setEntrancePlayed(true);
     }
   }, [enableCardEntrance]);
   const cardEntranceDelay = (index: number): number | null => {
@@ -378,7 +406,12 @@ export function QuotaPage() {
 
   /* ---------- 渲染 ---------- */
 
-  const isEmpty = !loading && filteredEntries.length === 0;
+  const presentation = resolveQuotaListPresentation({
+    loading,
+    ledger: isLedger,
+    listIsCurrent,
+    entryCount: filteredEntries.length,
+  });
   const searching = !isLedger && Boolean(search.trim());
 
   return (
@@ -390,17 +423,22 @@ export function QuotaPage() {
         refreshing={loading || batchLoading}
         disableControls={disableControls}
         showEmails={showEmails}
-        onToggleEmails={handleToggleEmails}
+        onToggleEmails={toggleEmails}
         onRefreshAll={handleRefreshAll}
       />
 
       <section className={styles.workbench}>
         {/* 提供商导航与搜索工具栏分层，避免不同控件争夺视觉焦点。 */}
-        <div className={styles.tabsRow} data-reveal>
+        <div
+          ref={tabsRowRef}
+          className={styles.tabsRow}
+          data-fade={scrollFadeAttribute(tabEdges)}
+          data-reveal
+        >
           <ProviderTabs
-            types={TAB_IDS}
+            types={visibleTabs}
             counts={tabCounts}
-            active={tab}
+            active={activeTab}
             resolvedTheme={resolvedTheme}
             onChange={handleTabChange}
           />
@@ -461,7 +499,7 @@ export function QuotaPage() {
           </div>
         )}
 
-        {loading ? (
+        {presentation === 'skeleton' ? (
           isLedger ? (
             <QuotaLedgerSkeleton />
           ) : (
@@ -471,28 +509,28 @@ export function QuotaPage() {
               ))}
             </div>
           )
-        ) : isEmpty ? (
+        ) : presentation === 'empty' ? (
           <EmptyState
             title={
               searching
                 ? t('quota_management.search_empty_title')
-                : tab === 'all'
+                : activeTab === 'all'
                   ? t('quota_management.empty_title')
-                  : t(`${QUOTA_ADAPTERS[tab].i18nPrefix}.empty_title`)
+                  : t(`${QUOTA_ADAPTERS[activeTab].i18nPrefix}.empty_title`)
             }
             description={
               searching
                 ? t('quota_management.search_empty_desc')
-                : tab === 'all'
+                : activeTab === 'all'
                   ? t('quota_management.empty_desc')
-                  : t(`${QUOTA_ADAPTERS[tab].i18nPrefix}.empty_desc`)
+                  : t(`${QUOTA_ADAPTERS[activeTab].i18nPrefix}.empty_desc`)
             }
             action={
               searching ? (
                 <Button variant="secondary" size="sm" onClick={() => handleSearchChange('')}>
                   {t('quota_management.search_clear')}
                 </Button>
-              ) : tab === 'all' ? undefined : (
+              ) : activeTab === 'all' ? undefined : (
                 <Button variant="secondary" size="sm" onClick={() => handleTabChange('all')}>
                   {t('auth_files.filter_all')}
                 </Button>
@@ -510,6 +548,9 @@ export function QuotaPage() {
             resettingQuotaName={resettingQuotaName}
             onRefresh={handleRefreshEntry}
             onReset={handleResetEntry}
+            animateEntrance={enableCardEntrance}
+            expandedSummaries={expandedSummaries}
+            onSummaryExpandedChange={handleSummaryExpandedChange}
           />
         ) : (
           <div className={styles.grid}>
@@ -530,7 +571,7 @@ export function QuotaPage() {
           </div>
         )}
 
-        {!loading && filteredEntries.length > QUOTA_PAGE_SIZE && (
+        {presentation === 'list' && filteredEntries.length > QUOTA_PAGE_SIZE && (
           <div className={styles.pagination}>
             <Button
               variant="secondary"

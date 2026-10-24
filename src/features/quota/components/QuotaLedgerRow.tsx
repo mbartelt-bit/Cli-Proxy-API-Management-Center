@@ -4,7 +4,11 @@
  *
  * Columns come from the provider group (see `orderLedgerColumns`), so every
  * row of a group lines up even when a credential lacks one of the windows —
- * that slot renders an em-dash. Behavioural parity with `QuotaCard`: the same
+ * that slot renders an em-dash. Window cells share one width page-wide and
+ * sit in a wrapping track, so a group with more windows than fit continues on
+ * a second line at the same column positions. A label that does not fit keeps
+ * its window name first and offers the full text as a tooltip; a group name
+ * that tells repeated windows apart gets a line of its own. Behavioural parity with `QuotaCard`: the same
  * refresh/reset disable rules, the same error mapping, Claude observations
  * kept visible while refreshing, and the Claude reset-grant and Codex
  * reset-credit actions whenever the card would offer them.
@@ -22,6 +26,8 @@ import {
   formatLedgerKindLabel,
   formatLedgerPercent,
   formatLedgerWindowLabel,
+  formatLedgerWindowName,
+  formatLedgerWindowScope,
   quotaTier,
   resolveLedgerPlan,
   resolveLedgerRowState,
@@ -106,6 +112,9 @@ export function QuotaLedgerRow({
       : null;
 
   const columnCount = Math.max(1, columns.length);
+  // A provider-level decision: when any column names its group, every cell
+  // keeps a line for it so the bars of a row stay level.
+  const scopeLine = columns.some((column) => column.qualifyScope);
   const actionLabel = (action: string) =>
     t('quota_management.ledger_action_label', { action, name: displayName });
   const refreshLabel = t('auth_files.quota_refresh_single');
@@ -126,6 +135,7 @@ export function QuotaLedgerRow({
           key={column.key}
           window={window}
           qualifyScope={column.qualifyScope}
+          scopeLine={scopeLine}
           muted={muted}
           now={now}
         />
@@ -198,7 +208,7 @@ export function QuotaLedgerRow({
         )}
       </div>
 
-      {cells}
+      <div className={styles.windows}>{cells}</div>
 
       <div className={styles.actions}>
         {showClaudeReset && (
@@ -257,23 +267,38 @@ export function QuotaLedgerRow({
 function LedgerWindowCell({
   window,
   qualifyScope,
+  scopeLine,
   muted,
   now,
 }: {
   window: LedgerWindow;
   /** The column's provider-level decision, so every row labels it alike. */
   qualifyScope: boolean;
+  /** Reserve the group line even when this column has no group to name. */
+  scopeLine: boolean;
   muted: boolean;
   now: number;
 }) {
   const { t } = useTranslation();
   const tier = quotaTier(window.remaining);
   const notReported = window.remaining === null;
+  const scope = formatLedgerWindowScope(t, window, qualifyScope);
+  const label = formatLedgerWindowLabel(t, window, qualifyScope);
 
   return (
     <div className={styles.cell} data-emphasis={muted ? 'muted' : undefined}>
+      {scopeLine &&
+        (scope ? (
+          <span className={styles.cellScope} title={scope}>
+            {scope}
+          </span>
+        ) : (
+          <span className={styles.cellScope} aria-hidden="true" />
+        ))}
       <div className={styles.cellHead}>
-        <span className={styles.cellLabel}>{formatLedgerWindowLabel(t, window, qualifyScope)}</span>
+        <span className={styles.cellLabel} title={label}>
+          {formatLedgerWindowName(t, window)}
+        </span>
         <span
           className={styles.cellPercent}
           title={notReported ? t('quota_management.ledger_not_reported') : undefined}
