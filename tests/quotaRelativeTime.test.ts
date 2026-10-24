@@ -9,7 +9,9 @@ import {
   formatInstantShort,
   formatQuotaResetTime,
   formatRelativeInstant,
+  MAX_DATE_MS,
   relativeTimeParts,
+  toInstantMs,
 } from '@/utils/quota';
 import { DAY_MS, HOUR_MS, MINUTE_MS } from '@/utils/time/durations';
 
@@ -80,6 +82,8 @@ describe('formatInstantShort', () => {
 
   test('degrades to a dash rather than "Invalid Date"', () => {
     expect(formatInstantShort(Number.NaN)).toBe('-');
+    // A nanosecond epoch is finite but outside the Date range.
+    expect(formatInstantShort(1.7e18)).toBe('-');
   });
 });
 
@@ -125,6 +129,11 @@ describe('buildResetDisplay', () => {
     expect(buildResetDisplay(undefined, Number.NaN, NOW, 'en')).toBeNull();
     expect(buildResetDisplay('08-13 14:30', Number.POSITIVE_INFINITY, NOW, 'en')?.relative).toBeNull();
   });
+
+  test('rejects an instant outside the Date range', () => {
+    expect(buildResetDisplay(undefined, 1.7e18, NOW, 'en')).toBeNull();
+    expect(buildResetDisplay('08-13 14:30', 1.7e18, NOW, 'en')?.relative).toBeNull();
+  });
 });
 
 describe('formatInstantMonthDayTime', () => {
@@ -137,5 +146,27 @@ describe('formatInstantMonthDayTime', () => {
   test('a non-finite instant renders the empty placeholder', () => {
     expect(formatInstantMonthDayTime(Number.NaN)).toBe('-');
     expect(formatInstantMonthDayTime(Number.POSITIVE_INFINITY)).toBe('-');
+  });
+
+  test('an instant outside the Date range renders the placeholder, not NaN', () => {
+    expect(formatInstantMonthDayTime(1.7e18)).toBe('-');
+    expect(formatInstantMonthDayTime(-MAX_DATE_MS - 1)).toBe('-');
+  });
+});
+
+describe('toInstantMs', () => {
+  test('keeps instants a Date can hold and drops everything else', () => {
+    expect(toInstantMs(NOW)).toBe(NOW);
+    expect(toInstantMs(0)).toBe(0);
+    expect(toInstantMs(MAX_DATE_MS)).toBe(MAX_DATE_MS);
+    expect(toInstantMs(-MAX_DATE_MS)).toBe(-MAX_DATE_MS);
+    expect(Number.isFinite(new Date(MAX_DATE_MS).getTime())).toBe(true);
+    expect(toInstantMs(MAX_DATE_MS + 1)).toBeNull();
+    expect(Number.isFinite(new Date(MAX_DATE_MS + 1).getTime())).toBe(false);
+    expect(toInstantMs(1.7e18)).toBeNull();
+    expect(toInstantMs(Number.NaN)).toBeNull();
+    expect(toInstantMs(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(toInstantMs('1761307200000')).toBeNull();
+    expect(toInstantMs(null)).toBeNull();
   });
 });

@@ -14,6 +14,7 @@ import { QuotaLedgerSummaryCell } from '@/features/quota/components/QuotaLedgerS
 import { QuotaLedgerRow } from '@/features/quota/components/QuotaLedgerRow';
 import { QuotaLedger } from '@/features/quota/components/QuotaLedger';
 import { QuotaHeader } from '@/features/quota/components/QuotaHeader';
+import { QuotaLedgerReset } from '@/features/quota/components/QuotaLedgerReset';
 import {
   buildLedgerProviderModel,
   extractLedgerWindows,
@@ -231,6 +232,26 @@ describe('ledger row', () => {
       `<time dateTime="${new Date(NOW + DAY_MS + 11 * HOUR_MS).toISOString()}">${formatInstantMonthDayTime(NOW + DAY_MS + 11 * HOUR_MS)}</time>`
     );
     expect(markup).toContain('data-state="ready"');
+  });
+
+  test('a reset instant outside the Date range reads no reset pending instead of throwing', () => {
+    // Bypasses the model's range check: the component must not throw on its own.
+    const render = (resetAtMs: number | null) =>
+      renderToStaticMarkup(createElement(QuotaLedgerReset, { resetAtMs, now: NOW }));
+    expect(() => render(1.7e18)).not.toThrow();
+    expect(render(1.7e18)).toContain('No reset pending');
+    expect(render(1.7e18)).not.toContain('NaN');
+    expect(render(NOW + DAY_MS)).toContain('in 1 day');
+
+    // End to end through a row: a nanosecond epoch from upstream still renders.
+    const markup = renderRow({
+      quota: {
+        status: 'success',
+        windows: [claudeWindow('seven-day-fable', 'claude_quota.seven_day_fable', 10, 1.7e18, 168)],
+      } as QuotaCardState,
+    });
+    expect(markup).toContain('90%');
+    expect(markup).toContain('No reset pending');
   });
 
   test('a window the credential lacks keeps its column as an em-dash', () => {

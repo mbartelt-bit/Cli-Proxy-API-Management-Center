@@ -776,6 +776,96 @@ describe('extractLedgerWindows: other providers', () => {
   });
 });
 
+/* ------------------------------------------------------- reset instants */
+
+describe('reset instants outside the Date range', () => {
+  const NANOSECOND_EPOCH = 1.7e18;
+
+  test('are dropped for every provider rather than reaching a formatter', () => {
+    const codex = extractLedgerWindows('codex', {
+      status: 'success',
+      windows: buildCodexQuotaWindows(
+        {
+          rate_limit: {
+            secondary_window: {
+              used_percent: 40,
+              limit_window_seconds: 604800,
+              reset_at: NANOSECOND_EPOCH,
+            },
+          },
+        },
+        t
+      ),
+    });
+    expect(codex?.map((window) => [window.key, window.remaining, window.resetAtMs])).toEqual([
+      ['weekly', 60, null],
+    ]);
+
+    const claude = extractLedgerWindows('claude', {
+      status: 'success',
+      windows: [{ id: 'seven-day', usedPercent: 10, resetAtMs: -9e15, periodHours: 168 }],
+    });
+    expect(claude?.[0].resetAtMs).toBeNull();
+
+    const devin = extractLedgerWindows('devin', {
+      status: 'success',
+      windows: [{ id: 'daily', remainingPercent: 50, resetAtMs: NANOSECOND_EPOCH }],
+    });
+    expect(devin?.[0].resetAtMs).toBeNull();
+
+    const xai = extractLedgerWindows('xai', {
+      status: 'success',
+      billing: {
+        mode: 'billing',
+        periodType: 'weekly',
+        usagePercent: 10,
+        productUsage: [],
+        resetAtMs: NANOSECOND_EPOCH,
+      },
+    });
+    expect(xai?.[0].resetAtMs).toBeNull();
+
+    const bucket = extractLedgerWindows('plugin', {
+      status: 'success',
+      groups: [
+        {
+          id: 'g',
+          label: 'Plan',
+          buckets: [{ id: 'b', label: 'Daily', remainingFraction: 0.5, resetAtMs: Infinity }],
+        },
+      ],
+    });
+    expect(bucket?.[0].resetAtMs).toBeNull();
+
+    const kimi = extractLedgerWindows('kimi', {
+      status: 'success',
+      rows: [{ id: 'a', label: 'Weekly', used: 1, limit: 2, resetAtMs: 1e16 }],
+    });
+    expect(kimi?.[0].resetAtMs).toBeNull();
+
+    // Meta reports Unix seconds; the range check applies after scaling to ms.
+    const meta = extractLedgerWindows('meta', {
+      status: 'success',
+      data: {
+        windows: [
+          { id: 'weekly', usedPercent: 0, resetAt: 9e12 },
+          { id: 'window', usedPercent: 0, resetAt: 8.64e12, durationMinutes: 300 },
+        ],
+      },
+    });
+    expect(meta?.map((window) => window.resetAtMs)).toEqual([null, 8.64e15]);
+  });
+
+  test('never become the soonest reset of a kind', () => {
+    const windows = extractLedgerWindows('codex', {
+      status: 'success',
+      windows: [{ id: 'weekly', usedPercent: 0, resetAtMs: NANOSECOND_EPOCH, periodHours: 168 }],
+    });
+    const model = buildLedgerProviderModel('codex', [{ id: 'c', windows }], NOW);
+    expect(model.headline?.soonestResetAtMs).toBeNull();
+  });
+});
+
 /* ---------------------------------------------------------------- plans */
 
 describe('resolveLedgerPlan', () => {

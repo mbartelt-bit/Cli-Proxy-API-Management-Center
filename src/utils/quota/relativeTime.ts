@@ -12,6 +12,7 @@
  */
 
 import { DAY_MS, HOUR_MS, MINUTE_MS } from '@/utils/time/durations';
+import { toInstantMs } from './resetInstants';
 
 export interface RelativeTimeParts {
   /** Signed magnitude: positive is future, negative is past. */
@@ -79,7 +80,8 @@ export function formatRelativeInstant(targetMs: number, nowMs: number, locale?: 
  * time and the ones formatted at render time can never drift apart.
  */
 export function formatInstantShort(ms: number): string {
-  if (!Number.isFinite(ms)) return '-';
+  // Out of the Date range would read "Invalid Date".
+  if (toInstantMs(ms) === null) return '-';
   return new Date(ms).toLocaleString(undefined, {
     month: '2-digit',
     day: '2-digit',
@@ -98,7 +100,8 @@ const pad2 = (value: number) => String(value).padStart(2, '0');
  * make neighbouring cells harder to compare.
  */
 export function formatInstantMonthDayTime(ms: number): string {
-  if (!Number.isFinite(ms)) return '-';
+  // Out of the Date range every getter is NaN ("NaN/NaN, NaN:NaN").
+  if (toInstantMs(ms) === null) return '-';
   const date = new Date(ms);
   return `${pad2(date.getMonth() + 1)}/${pad2(date.getDate())}, ${pad2(date.getHours())}:${pad2(
     date.getMinutes()
@@ -131,7 +134,7 @@ export function buildResetDisplay(
 ): ResetDisplay | null {
   const trimmed = typeof absoluteLabel === 'string' ? absoluteLabel.trim() : '';
   const absolute = trimmed && trimmed !== '-' ? trimmed : null;
-  const usableMs = typeof atMs === 'number' && Number.isFinite(atMs) ? atMs : null;
+  const usableMs = toInstantMs(atMs);
 
   if (absolute === null && usableMs === null) return null;
 

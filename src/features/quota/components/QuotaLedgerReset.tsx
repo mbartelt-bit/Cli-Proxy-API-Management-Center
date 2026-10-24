@@ -6,7 +6,7 @@
  */
 
 import { useTranslation } from 'react-i18next';
-import { formatInstantMonthDayTime, formatRelativeInstant } from '@/utils/quota';
+import { formatInstantMonthDayTime, formatRelativeInstant, toInstantMs } from '@/utils/quota';
 
 export interface QuotaLedgerResetProps {
   resetAtMs: number | null;
@@ -27,7 +27,7 @@ export function QuotaLedgerReset({
 }: QuotaLedgerResetProps) {
   const { t, i18n } = useTranslation();
 
-  if (resetAtMs === null || !Number.isFinite(resetAtMs)) {
+  if (resetAtMs === null || toInstantMs(resetAtMs) === null) {
     return (
       <span className={[className, emptyClassName].filter(Boolean).join(' ') || undefined}>
         {t('quota_management.ledger_no_reset')}

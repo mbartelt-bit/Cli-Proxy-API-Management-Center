@@ -18,6 +18,7 @@
  * back) and Claude dollar balances (amounts, not percentage windows).
  */
 
+import { toInstantMs } from '@/utils/quota/resetInstants';
 import type { QuotaProviderType } from './providers/types';
 import {
   QUOTA_PROGRESS_HIGH_THRESHOLD,
@@ -48,6 +49,7 @@ export interface LedgerWindow {
   scope?: { label: string; labelKey?: string };
   /** Remaining percent, 0..100; null when the window reports no usage. */
   remaining: number | null;
+  /** Epoch ms inside the `Date` range, or null. */
   resetAtMs: number | null;
   periodHours: number | null;
 }
@@ -63,6 +65,14 @@ const positiveOrNull = (value: unknown): number | null => {
   const numeric = finiteOrNull(value);
   return numeric !== null && numeric > 0 ? numeric : null;
 };
+
+/**
+ * A reset instant the UI can format, or null. Every `resetAtMs` goes through
+ * here: upstream parsers pass any positive number, and one nanosecond epoch
+ * outside the `Date` range would otherwise make `toISOString()` throw and
+ * blank the page.
+ */
+const instantOrNull = toInstantMs;
 
 /** Percent-used providers: remaining is the complement, clamped. */
 const remainingFromUsed = (used: unknown): number | null => {
@@ -140,7 +150,7 @@ const fromPercentUsedWindows = (windows: readonly PercentUsedWindowLike[]): Ledg
     labelKey: window.labelKey,
     labelParams: window.labelParams,
     remaining: remainingFromUsed(window.usedPercent),
-    resetAtMs: finiteOrNull(window.resetAtMs),
+    resetAtMs: instantOrNull(window.resetAtMs),
     periodHours: positiveOrNull(window.periodHours),
   }));
 
@@ -152,7 +162,7 @@ const fromDevinWindows = (windows: readonly DevinWindowLike[]): LedgerWindow[] =
       label: window.label ?? window.id,
       labelKey: `devin_quota.${window.id}`,
       remaining: remaining === null ? null : clampPercent(remaining),
-      resetAtMs: finiteOrNull(window.resetAtMs),
+      resetAtMs: instantOrNull(window.resetAtMs),
       periodHours: positiveOrNull(window.periodHours),
     };
   });
@@ -175,7 +185,7 @@ const fromXaiBilling = (billing: XaiBillingLike | null | undefined): LedgerWindo
       label: 'weekly',
       labelKey: 'xai_quota.weekly_limit',
       remaining: used === null ? null : clampPercent(100 - used),
-      resetAtMs: finiteOrNull(billing.resetAtMs),
+      resetAtMs: instantOrNull(billing.resetAtMs),
       periodHours: positiveOrNull(billing.periodHours) ?? WEEK_HOURS,
     },
   ];
@@ -209,7 +219,7 @@ const fromBucketGroups = (
           : undefined,
         // Remaining FRACTION, the inverse of the percent-used providers.
         remaining: fraction === null ? null : clampPercent(fraction * 100),
-        resetAtMs: finiteOrNull(bucket.resetAtMs),
+        resetAtMs: instantOrNull(bucket.resetAtMs),
         periodHours: positiveOrNull(bucket.periodHours),
       };
     })
@@ -248,7 +258,7 @@ const fromKimiRows = (rows: readonly KimiRowLike[]): LedgerWindow[] =>
       labelKey: row.labelKey,
       labelParams: row.labelParams,
       remaining,
-      resetAtMs: finiteOrNull(row.resetAtMs),
+      resetAtMs: instantOrNull(row.resetAtMs),
       periodHours: positiveOrNull(row.periodHours),
     };
   });
@@ -269,7 +279,7 @@ const fromMetaWindows = (windows: readonly MetaWindowLike[]): LedgerWindow[] =>
       labelParams:
         minutes === null ? undefined : minutes % 60 === 0 ? { hours: minutes / 60 } : { minutes },
       remaining: remainingFromUsed(window.usedPercent),
-      resetAtMs: resetAt === null ? null : resetAt * 1000,
+      resetAtMs: resetAt === null ? null : instantOrNull(resetAt * 1000),
       // The upstream weekly bucket has no duration field; its scope defines it.
       periodHours: window.id === 'weekly' ? WEEK_HOURS : minutes === null ? null : minutes / 60,
     };
